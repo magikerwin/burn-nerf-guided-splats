@@ -1,6 +1,6 @@
 use burn::module::Module;
 use burn::nn::{Linear, LinearConfig};
-use burn::tensor::{backend::Backend, Tensor};
+use burn::tensor::{backend::Backend, Int, Tensor};
 
 #[derive(Clone, Debug)]
 pub struct PositionalEncoding {
@@ -94,9 +94,46 @@ impl<B: Backend> NerfModel<B> {
     }
 }
 
+impl<B: Backend> crate::model::ImageFitter<B> for NerfModel<B> {
+    fn render(&self, width: usize, height: usize) -> Tensor<B, 3> {
+        let device = self.linear1.weight.val().device();
+
+        // 1. Generate coordinates grid (bounds expected as i64)
+        let x = Tensor::<B, 1, Int>::arange(0..(width as i64), &device).float().div_scalar(width as f32);
+        let y = Tensor::<B, 1, Int>::arange(0..(height as i64), &device).float().div_scalar(height as f32);
+
+        let x_2d = x.unsqueeze_dim::<2>(0).repeat(&[height, 1]); // [height, width]
+        let y_2d = y.unsqueeze_dim::<2>(1).repeat(&[1, width]);  // [height, width]
+
+        let coords = Tensor::cat(
+            vec![x_2d.unsqueeze_dim::<3>(2), y_2d.unsqueeze_dim::<3>(2)],
+            2,
+        );
+
+        // 2. Map coordinates through PositionalEncoding
+        let pe = PositionalEncoding::new(self.num_frequencies);
+        let encoded = pe.forward(coords); // [height, width, 4 * L]
+
+        // 3. Forward pass through MLP to output RGB [height, width, 3]
+        self.forward(encoded)
+    }
+
+    fn forward_loss(&self, target_image: &Tensor<B, 3>) -> Tensor<B, 1> {
+        let shape = target_image.shape();
+        let dims = shape.dims::<3>();
+        let height = dims[0];
+        let width = dims[1];
+
+        let rendered = self.render(width, height);
+        let diff = rendered.sub(target_image.clone());
+        diff.powf_scalar(2.0).mean()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::ImageFitter;
     use burn::backend::Flex;
 
     #[test]
@@ -121,5 +158,20 @@ mod tests {
         let output = model.forward(input);
 
         assert_eq!(output.shape().dims::<3>(), [4, 4, 3]);
+    }
+
+    #[test]
+    fn test_nerf_image_fitter_implementation() {
+        let device = Default::default();
+        let model = NerfModel::<Flex>::new(4, 8, &device);
+
+        // Create dummy target: shape [6, 6, 3]
+        let target = Tensor::<Flex, 3>::zeros([6, 6, 3], &device);
+
+        let rendered = model.render(6, 6);
+        assert_eq!(rendered.shape().dims::<3>(), [6, 6, 3]);
+
+        let loss = model.forward_loss(&target);
+        assert_eq!(loss.shape().dims::<1>(), [1]);
     }
 }
