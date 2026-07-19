@@ -1,10 +1,10 @@
-# BurnSplat (Splat-vs-NeRF)
+# BurnSplat: NeRF-Guided 2D Gaussian Splatting
 
-An educational 2D rendering engine implemented in Rust using the **Burn** deep learning framework. This project demonstrates and compares two competing machine learning paradigms side-by-side:
+An educational 2D rendering engine implemented in Rust using the **Burn** deep learning framework. This project demonstrates how explicit and implicit neural representations can be combined into a state-of-the-art hybrid pipeline:
 
-1. **Explicit Representation (2D Gaussian Splatting):** Optimizing the physical parameters (Position, Scale, Rotation, Color, Opacity) of a set of 2D Gaussians.
-2. **Implicit Representation (2D NeRF / Coordinate MLP):** Training a Multi-Layer Perceptron (MLP) with Positional Encoding to map $(x, y)$ coordinate grids to $(r, g, b)$ colors.
-3. **Hybrid Representation (NeRF-Assisted GS):** Seeding the initial locations of 2D Gaussians based on the spatial gradients/edges learned by a partially trained Coordinate MLP.
+1. **Explicit Representation (2D Gaussian Splatting):** Optimizing the physical parameters (Position, Scale, Rotation, Color, Opacity) of 2D Gaussians. Excellent at capturing sharp, high-frequency details and rendering at very high frame rates.
+2. **Implicit Representation (2D NeRF / Coordinate MLP):** Training a Multi-Layer Perceptron (MLP) with Positional Encoding to map $(x, y)$ coordinate grids to RGB colors. Excellent at learning continuous coordinate representations, smooth gradients, and global structures.
+3. **Cooperative Hybrid Representation (NeRF-Guided GS):** Seeding the initial locations of the explicit 2D Gaussians based on spatial derivatives (variance and edges) extracted from the partially trained implicit NeRF MLP, rather than a uniform random distribution. This directly mirrors state-of-the-art hybrid 3D reconstruction pipelines.
 
 Both models compile to **WebAssembly (WASM)** and run locally in the web browser accelerated by **WebGPU** using Burn's WGPU backend.
 
