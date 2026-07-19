@@ -1,5 +1,5 @@
 use burn::module::{Module, Param};
-use burn::tensor::{activation::sigmoid, backend::Backend, Tensor};
+use burn::tensor::{activation::sigmoid, backend::Backend, Int, Tensor};
 
 #[derive(Module, Debug)]
 pub struct GaussianModel<B: Backend> {
@@ -163,9 +163,41 @@ impl<B: Backend> GaussianModel<B> {
     }
 }
 
+impl<B: Backend> crate::model::ImageFitter<B> for GaussianModel<B> {
+    fn render(&self, width: usize, height: usize) -> Tensor<B, 3> {
+        let device = self.means.val().device();
+
+        // Generate coordinates grid (bounds expected as i64)
+        let x = Tensor::<B, 1, Int>::arange(0..(width as i64), &device).float().div_scalar(width as f32);
+        let y = Tensor::<B, 1, Int>::arange(0..(height as i64), &device).float().div_scalar(height as f32);
+
+        let x_2d = x.unsqueeze_dim::<2>(0).repeat(&[height, 1]); // [height, width]
+        let y_2d = y.unsqueeze_dim::<2>(1).repeat(&[1, width]);  // [height, width]
+
+        let coords = Tensor::cat(
+            vec![x_2d.unsqueeze_dim::<3>(2), y_2d.unsqueeze_dim::<3>(2)],
+            2,
+        );
+
+        self.render_with_coords(coords)
+    }
+
+    fn forward_loss(&self, target_image: &Tensor<B, 3>) -> Tensor<B, 1> {
+        let shape = target_image.shape();
+        let dims = shape.dims::<3>();
+        let height = dims[0];
+        let width = dims[1];
+
+        let rendered = self.render(width, height);
+        let diff = rendered.sub(target_image.clone());
+        diff.powf_scalar(2.0).mean()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::ImageFitter;
     use burn::backend::Flex;
     use burn::tensor::Int;
 
@@ -198,5 +230,20 @@ mod tests {
 
         let rendered = model.render_with_coords(coords);
         assert_eq!(rendered.shape().dims::<3>(), [8, 8, 3]);
+    }
+
+    #[test]
+    fn test_image_fitter_implementation() {
+        let device = Default::default();
+        let model = GaussianModel::<Flex>::new(3, &device);
+
+        // Create a dummy target image of shape [4, 4, 3]
+        let target = Tensor::<Flex, 3>::zeros([4, 4, 3], &device);
+
+        let rendered = model.render(4, 4);
+        assert_eq!(rendered.shape().dims::<3>(), [4, 4, 3]);
+
+        let loss = model.forward_loss(&target);
+        assert_eq!(loss.shape().dims::<1>(), [1]);
     }
 }
