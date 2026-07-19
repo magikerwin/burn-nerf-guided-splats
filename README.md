@@ -70,6 +70,16 @@ This vector is passed through a coordinate network (MLP) consisting of:
     2. Rendering coordinates output tensor shape dimensions (`[H, W, 3]`).
     3. Trait rendering and MSE loss convergence/scalar shapes (`[1]`).
 
+### Coordinate MLP (`src/model/nerf.rs`)
+*   **Struct:** `NerfModel<B: Backend>`
+*   **Positional Encoding:** `PositionalEncoding::forward(coords)` maps low-dimensional $(x,y)$ coordinates to higher-frequency features using Fourier sinusoidal mapping.
+*   **Initialization:** `NerfModel::new(num_frequencies, hidden_dim, device)` creates a multi-layer linear projection network with ReLU activations and a final sigmoid output mapping to RGB.
+*   **Trait Integration:** Implements `ImageFitter<B>` supporting `render(width, height)` and `forward_loss(target_image)` (MSE loss).
+*   **Unit Tests:** Local unit tests verify:
+    1. Fourier positional mapping output dimensions (`[H, W, 4L]`).
+    2. Coordinate MLP feedforward dims (`[H, W, 3]`).
+    3. Trait rendering and MSE loss convergence/scalar shapes (`[1]`).
+
 ---
 
 ## 3. Getting Started
