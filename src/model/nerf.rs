@@ -1,3 +1,5 @@
+use burn::module::Module;
+use burn::nn::{Linear, LinearConfig};
 use burn::tensor::{backend::Backend, Tensor};
 
 #[derive(Clone, Debug)]
@@ -49,6 +51,49 @@ impl PositionalEncoding {
     }
 }
 
+#[derive(Module, Debug)]
+pub struct NerfModel<B: Backend> {
+    pub linear1: Linear<B>,
+    pub linear2: Linear<B>,
+    pub linear3: Linear<B>,
+    pub linear4: Linear<B>,
+    pub num_frequencies: usize,
+}
+
+impl<B: Backend> NerfModel<B> {
+    /// Initializes a new NerfModel with given configuration.
+    pub fn new(num_frequencies: usize, hidden_dim: usize, device: &B::Device) -> Self {
+        let input_dim = 4 * num_frequencies; // (2 coords) * (sin + cos) * L
+
+        let linear1 = LinearConfig::new(input_dim, hidden_dim).init(device);
+        let linear2 = LinearConfig::new(hidden_dim, hidden_dim).init(device);
+        let linear3 = LinearConfig::new(hidden_dim, hidden_dim).init(device);
+        let linear4 = LinearConfig::new(hidden_dim, 3).init(device); // Outputs RGB
+
+        Self {
+            linear1,
+            linear2,
+            linear3,
+            linear4,
+            num_frequencies,
+        }
+    }
+
+    /// Evaluates the coordinate MLP on positional encoded features.
+    pub fn forward(&self, input: Tensor<B, 3>) -> Tensor<B, 3> {
+        use burn::tensor::activation::{relu, sigmoid};
+
+        let x = self.linear1.forward(input);
+        let x = relu(x);
+        let x = self.linear2.forward(x);
+        let x = relu(x);
+        let x = self.linear3.forward(x);
+        let x = relu(x);
+        let x = self.linear4.forward(x);
+        sigmoid(x)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -64,5 +109,17 @@ mod tests {
         let encoded = pe.forward(coords);
 
         assert_eq!(encoded.shape().dims::<3>(), [4, 4, 40]);
+    }
+
+    #[test]
+    fn test_nerf_mlp_forward_shape() {
+        let device = Default::default();
+        let model = NerfModel::<Flex>::new(8, 16, &device); // input dim = 32
+
+        // Create dummy encoded features: shape [4, 4, 32]
+        let input = Tensor::<Flex, 3>::zeros([4, 4, 32], &device);
+        let output = model.forward(input);
+
+        assert_eq!(output.shape().dims::<3>(), [4, 4, 3]);
     }
 }
