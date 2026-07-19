@@ -1,4 +1,4 @@
-# BurnSplat: NeRF-Guided 2D Gaussian Splatting
+# NeRF-Guided 2D Gaussian Splatting in Burn
 
 An educational 2D rendering engine implemented in Rust using the **Burn** deep learning framework. This project demonstrates how explicit and implicit neural representations can be combined into a state-of-the-art hybrid pipeline:
 
