@@ -1,5 +1,5 @@
 use burn::module::{Module, Param};
-use burn::tensor::{backend::Backend, Tensor};
+use burn::tensor::{activation::sigmoid, backend::Backend, Tensor};
 
 #[derive(Module, Debug)]
 pub struct GaussianModel<B: Backend> {
@@ -101,12 +101,73 @@ impl<B: Backend> GaussianModel<B> {
 
         (inv_cov_00, inv_cov_01, inv_cov_11)
     }
+
+    /// Renders the Gaussians given a pre-computed coordinate grid of shape [H, W, 2].
+    /// Returns a rendered image tensor of shape [H, W, 3].
+    pub fn render_with_coords(&self, coords: Tensor<B, 3>) -> Tensor<B, 3> {
+        let n = self.means.val().shape().dims::<2>()[0];
+
+        // 1. Compute inverse covariance elements
+        let (c00, c01, c11) = self.compute_inverse_covariance(); // each is [N, 1]
+
+        // Reshape inverse covariance elements to [N, 1, 1] for broadcasting
+        let c00_3d = c00.unsqueeze_dim::<3>(2);
+        let c01_3d = c01.unsqueeze_dim::<3>(2);
+        let c11_3d = c11.unsqueeze_dim::<3>(2);
+
+        // 2. Compute differences: pixel_coords - means
+        // coords has shape [H, W, 2]. Reshape to [1, H, W, 2]
+        let coords_4d = coords.unsqueeze_dim::<4>(0);
+        // means has shape [N, 2]. Reshape to [N, 1, 1, 2]
+        let means_4d = self.means.val().reshape([n, 1, 1, 2]);
+
+        // Broadcasted subtraction: [N, H, W, 2]
+        let diff = coords_4d.sub(means_4d);
+
+        // Extract dx and dy of shape [N, H, W]
+        let dx = diff.clone().narrow(3, 0, 1).squeeze_dim(3);
+        let dy = diff.narrow(3, 1, 1).squeeze_dim(3);
+
+        // 3. Compute power exponent for each Gaussian at each pixel:
+        // power = -0.5 * (c00 * dx^2 + 2 * c01 * dx * dy + c11 * dy^2)
+        let dx2 = dx.clone().powf_scalar(2.0);
+        let dy2 = dy.clone().powf_scalar(2.0);
+        let dx_dy = dx.mul(dy);
+
+        let term1 = c00_3d.mul(dx2);
+        let term2 = c01_3d.mul(dx_dy).mul_scalar(2.0);
+        let term3 = c11_3d.mul(dy2);
+
+        let power = term1.add(term2).add(term3).mul_scalar(-0.5);
+
+        // Gaussian density: G = exp(power) -> shape [N, H, W]
+        let g = power.exp();
+
+        // 4. Multiply by opacities and colors and sum
+        // opacities has shape [N, 1]. Apply sigmoid and reshape to [N, 1, 1, 1]
+        let opac = sigmoid(self.opacities.val()).reshape([n, 1, 1, 1]);
+        // colors has shape [N, 3]. Apply sigmoid and reshape to [N, 1, 1, 3]
+        let col = sigmoid(self.colors.val()).reshape([n, 1, 1, 3]);
+
+        // Reshape G to [N, H, W, 1]
+        let g_4d = g.unsqueeze_dim::<4>(3);
+
+        // Contribution of each Gaussian: [N, H, W, 3]
+        let contribution = g_4d.mul(opac).mul(col);
+
+        // Sum contributions along dimension 0 (Gaussian dim): [1, H, W, 3]
+        let rendered_sum = contribution.sum_dim(0);
+
+        // Squeeze first dimension to return [H, W, 3]
+        rendered_sum.squeeze_dim(0)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use burn::backend::Flex;
+    use burn::tensor::Int;
 
     #[test]
     fn test_compute_inverse_covariance_shape() {
@@ -117,5 +178,25 @@ mod tests {
         assert_eq!(c00.shape().dims::<2>(), [10, 1]);
         assert_eq!(c01.shape().dims::<2>(), [10, 1]);
         assert_eq!(c11.shape().dims::<2>(), [10, 1]);
+    }
+
+    #[test]
+    fn test_render_with_coords_shape() {
+        let device = Default::default();
+        let model = GaussianModel::<Flex>::new(5, &device);
+
+        // Create a dummy coordinate grid of shape [8, 8, 2]
+        let x = Tensor::<Flex, 1, Int>::arange(0..8, &device).float().div_scalar(8.0);
+        let y = Tensor::<Flex, 1, Int>::arange(0..8, &device).float().div_scalar(8.0);
+        let x_2d = x.unsqueeze_dim::<2>(0).repeat(&[8, 1]); // [8, 8]
+        let y_2d = y.unsqueeze_dim::<2>(1).repeat(&[1, 8]); // [8, 8]
+
+        let coords = Tensor::cat(
+            vec![x_2d.unsqueeze_dim::<3>(2), y_2d.unsqueeze_dim::<3>(2)],
+            2,
+        );
+
+        let rendered = model.render_with_coords(coords);
+        assert_eq!(rendered.shape().dims::<3>(), [8, 8, 3]);
     }
 }
