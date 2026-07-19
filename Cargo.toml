@@ -7,7 +7,7 @@ edition = "2024"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-burn = { version = "0.21.0", features = ["wgpu", "autodiff", "train"] }
+burn = { version = "0.21.0", features = ["wgpu", "autodiff", "train", "flex"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 rand = "0.8"
 serde = { version = "1.0", features = ["derive"] }

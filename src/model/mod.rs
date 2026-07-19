@@ -1,5 +1,7 @@
 use burn::tensor::{backend::Backend, Tensor};
 
+pub mod gaussian;
+
 pub trait ImageFitter<B: Backend> {
     /// Renders the current state to an image tensor of shape [height, width, 3]
     fn render(&self, width: usize, height: usize) -> Tensor<B, 3>;

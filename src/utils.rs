@@ -63,3 +63,48 @@ pub fn tensor_to_image<B: Backend>(tensor: Tensor<B, 3>) -> image::RgbImage {
 
     img
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use burn::backend::Flex;
+
+    #[test]
+    fn test_generate_synthetic_target() {
+        let img = generate_synthetic_target(32, 32);
+        assert_eq!(img.width(), 32);
+        assert_eq!(img.height(), 32);
+
+        // Center pixel should be red [255, 0, 0]
+        let center_pixel = img.get_pixel(16, 16);
+        assert_eq!(center_pixel, &image::Rgb([255, 0, 0]));
+
+        // Corner pixel should be blue [0, 0, 128]
+        let corner_pixel = img.get_pixel(0, 0);
+        assert_eq!(corner_pixel, &image::Rgb([0, 0, 128]));
+    }
+
+    #[test]
+    fn test_image_tensor_conversion() {
+        let device = Default::default();
+        let img = generate_synthetic_target(16, 16);
+
+        // Convert to tensor
+        let tensor = image_to_tensor::<Flex>(&img, &device);
+        let shape = tensor.shape();
+        let dims = shape.dims::<3>();
+        assert_eq!(dims[0], 16);
+        assert_eq!(dims[1], 16);
+        assert_eq!(dims[2], 3);
+
+        // Convert back to image
+        let recon = tensor_to_image::<Flex>(tensor);
+        assert_eq!(recon.width(), 16);
+        assert_eq!(recon.height(), 16);
+
+        // Check center pixel is preserved
+        assert_eq!(recon.get_pixel(8, 8), img.get_pixel(8, 8));
+        // Check corner pixel is preserved
+        assert_eq!(recon.get_pixel(0, 0), img.get_pixel(0, 0));
+    }
+}
