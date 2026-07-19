@@ -80,6 +80,18 @@ This vector is passed through a coordinate network (MLP) consisting of:
     2. Coordinate MLP feedforward dims (`[H, W, 3]`).
     3. Trait rendering and MSE loss convergence/scalar shapes (`[1]`).
 
+### Generic Optimizer & CLI Training (`src/training.rs`, `src/main.rs`)
+*   **Training Loop:** `train_step(model, optimizer, target_image, lr)` performs a single generic optimization step:
+    1. Computes `forward_loss`.
+    2. Runs `.backward()` to extract gradients.
+    3. Bundles gradients via `GradientsParams::from_grads`.
+    4. Updates parameters using `optimizer.step(lr, model, grads)`.
+*   **CLI Demo Binary:** Running `cargo run --release` launches a local execution pipeline:
+    1. Generates a $128 \times 128$ synthetic circular target image (`target.png`).
+    2. Trains a 500-Gaussian `GaussianModel` using the native WGPU/GPU backend for 1000 steps, exporting the reconstruction to `output_gaussian.png`.
+    3. Trains a `NerfModel` coordinate network for 1000 steps, exporting the reconstruction to `output_nerf.png`.
+*   **Unit Tests:** Local unit tests verify the generic backpropagation and parameter update step under the `Autodiff<Flex>` backend.
+
 ---
 
 ## 3. Getting Started
