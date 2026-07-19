@@ -1,0 +1,19 @@
+[package]
+name = "burn-nerf-guided-splats"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+burn = { version = "0.21.0", features = ["wgpu", "autodiff", "train"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+rand = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+console_error_panic_hook = "0.1"
+web-sys = { version = "0.3", features = ["console", "CanvasRenderingContext2d", "HtmlCanvasElement", "ImageData"] }
+wasm-bindgen-futures = "0.4"
