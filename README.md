@@ -92,6 +92,15 @@ This vector is passed through a coordinate network (MLP) consisting of:
     3. Trains a `NerfModel` coordinate network for 1000 steps, exporting the reconstruction to `output_nerf.png`.
 *   **Unit Tests:** Local unit tests verify the generic backpropagation and parameter update step under the `Autodiff<Flex>` backend.
 
+### 2.2 Execution Backends & Hardware Dispatching
+To optimize developer experience, compile times, and execution speed, the project employs a hybrid backend dispatching strategy:
+
+| Component | Target Platform | Backend used in Burn | Dispatch Target | Reason |
+| :--- | :--- | :--- | :--- | :--- |
+| **Native CLI** | Native Desktop | `Autodiff<Wgpu>` | **GPU** (WebGPU / Vulkan / DX12) | Performs parallel rendering and parameter updates directly on the graphics card. |
+| **WASM Library** | Web Browser | `Wgpu` | **GPU** (WebGPU) | Delivers fast, client-side, hardware-accelerated rendering inside browser contexts. |
+| **Unit Tests** | Native test runner | `Autodiff<Flex>` | **CPU** (Single-threaded / Eager) | Eliminates GPU shader compilation overhead for fast test iteration times (under 9 seconds). |
+
 ---
 
 ## 3. Getting Started
