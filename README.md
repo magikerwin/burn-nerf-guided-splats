@@ -57,6 +57,18 @@ This vector is passed through a coordinate network (MLP) consisting of:
         ├── gaussian.rs # 2D Gaussian Splatting implementation
         └── nerf.rs     # Coordinate MLP implementation
 ```
+## 2.1 Model Implementation Details
+
+### Gaussian Splatting (`src/model/gaussian.rs`)
+*   **Struct:** `GaussianModel<B: Backend>`
+*   **Initialization:** `GaussianModel::new(num_gaussians, device)` initializes physical parameters (means, scales, rotations, colors, opacities) log-uniformly or uniformly on the target device.
+*   **Covariance Math:** `compute_inverse_covariance()` calculates the inverse of the 2D covariance matrices $\Sigma^{-1}$ using tensor operations.
+*   **Rendering:** `render_with_coords(coords)` computes unnormalized Gaussian density values broadcasted over a coordinates grid of shape `[H, W, 2]`, multiplies by opacities and colors, and sums them.
+*   **Trait Integration:** Implements `ImageFitter<B>` supporting `render(width, height)` and `forward_loss(target_image)` (MSE loss).
+*   **Unit Tests:** Local unit tests run on the `Flex` CPU backend to verify:
+    1. Inverse covariance output tensor shape dimensions (`[N, 1]`).
+    2. Rendering coordinates output tensor shape dimensions (`[H, W, 3]`).
+    3. Trait rendering and MSE loss convergence/scalar shapes (`[1]`).
 
 ---
 
