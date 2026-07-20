@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BurnSplat - Explicit vs. Implicit 2D Renderer</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Outfit Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <a href="https://github.com/magikerwin/burn-nerf-guided-splats" target="_blank" class="github-link" aria-label="View source on GitHub">
+        <svg viewBox="0 0 16 16" width="24" height="24" fill="currentColor">
+            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+        </svg>
+    </a>
+    <div class="glow-bg"></div>
+    <div class="app-container">
+        <header>
+            <div class="logo">
+                <span class="gradient-text">BurnSplat</span> 
+                <span class="tag">2D Explicit vs. Implicit</span>
+            </div>
+            <p class="subtitle">An educational playground comparing 2D Gaussian Splatting and Coordinate MLP (NeRF) side-by-side using Burn & WebGPU</p>
+        </header>
+
+        <main class="dashboard-grid">
+            <!-- Sidebar Controls -->
+            <section class="card controls-card">
+                <h2>Configuration Panel</h2>
+                
+                <div class="control-section">
+                    <h4>1. Target Setup</h4>
+                    <div class="control-group">
+                        <label for="image-select">Target Image Space</label>
+                        <select id="image-select">
+                            <option value="synthetic">Synthetic Target (Circle)</option>
+                            <option value="upload">Upload Custom Image...</option>
+                        </select>
+                        <input type="file" id="image-upload" accept="image/*" class="hidden">
+                    </div>
+                </div>
+
+                <div class="control-section">
+                    <h4 class="orange-text">2. Explicit Splats (GS)</h4>
+                    <div class="control-group">
+                        <label for="num-gaussians">Num Gaussians ($N$)</label>
+                        <input type="number" id="num-gaussians" min="10" max="2000" value="500">
+                    </div>
+                    <div class="control-group">
+                        <label for="lr-gaussian">Optimizer Learning Rate</label>
+                        <input type="number" id="lr-gaussian" step="0.001" min="0.0001" max="0.1" value="0.005">
+                    </div>
+                </div>
+
+                <div class="control-section">
+                    <h4 class="purple-text">3. Implicit MLP (NeRF)</h4>
+                    <div class="control-group">
+                        <label for="lr-nerf">Optimizer Learning Rate</label>
+                        <input type="number" id="lr-nerf" step="0.0001" min="0.0001" max="0.05" value="0.001">
+                    </div>
+                </div>
+
+                <div class="btn-group">
+                    <button id="btn-train" class="btn primary-btn">Start Fitting</button>
+                    <button id="btn-reset" class="btn secondary-btn">Reset</button>
+                </div>
+
+                <div class="divider"></div>
+
+                <h3>Hybrid Bridge Seeding</h3>
+                <div class="btn-group vertical">
+                    <button id="btn-nerf-pretrain" class="btn accent-btn" disabled>1. Coarse NeRF Pre-train (50 Steps)</button>
+                    <button id="btn-seed" class="btn accent-btn" disabled>2. Initialize GS on NeRF Edges</button>
+                </div>
+            </section>
+
+            <!-- Main Live View area -->
+            <section class="visualizer-container">
+                <div class="canvases-row">
+                    <!-- Target Card -->
+                    <div class="card canvas-card target">
+                        <h3>Target Ground Truth</h3>
+                        <div class="canvas-wrapper">
+                            <canvas id="canvas-target" width="128" height="128"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Gaussian Splat Card -->
+                    <div class="card canvas-card gaussian">
+                        <h3 class="orange-text">Explicit Gaussians</h3>
+                        <div class="canvas-wrapper">
+                            <canvas id="canvas-gaussian" width="128" height="128"></canvas>
+                        </div>
+                        <div class="loss-badge" id="loss-gaussian">Loss: --</div>
+                    </div>
+
+                    <!-- NeRF Card -->
+                    <div class="card canvas-card nerf">
+                        <h3 class="purple-text">Implicit Coordinate MLP</h3>
+                        <div class="canvas-wrapper">
+                            <canvas id="canvas-nerf" width="128" height="128"></canvas>
+                        </div>
+                        <div class="loss-badge" id="loss-nerf">Loss: --</div>
+                    </div>
+                </div>
+
+                <div class="bottom-row">
+                    <!-- Interactive Loss History Chart -->
+                    <div class="card chart-card">
+                        <h3>Reconstruction Convergence (MSE Loss)</h3>
+                        <div class="chart-wrapper">
+                            <canvas id="canvas-chart" width="400" height="140"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Comparison Slider Card -->
+                    <div class="card blend-card">
+                        <h3>Cross-Representation Blend</h3>
+                        <div class="blend-container">
+                            <div class="blend-viewer">
+                                <canvas id="canvas-blend" width="128" height="128"></canvas>
+                            </div>
+                            <div class="slider-wrapper">
+                                <span class="orange-text font-bold">Explicit</span>
+                                <input type="range" id="blend-slider" min="0" max="1" step="0.01" value="0.5">
+                                <span class="purple-text font-bold">Implicit</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Load WASM initialization script -->
+    <script type="module" src="index.js"></script>
+</body>
+</html>
