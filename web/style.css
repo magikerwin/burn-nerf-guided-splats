@@ -449,9 +449,27 @@ input[type="range"] {
     }
 }
 
-.console-card {
+.console-details {
     margin-top: 1.5rem;
     width: 100%;
+}
+
+.console-summary {
+    font-weight: 600;
+    font-size: 1.1rem;
+    cursor: pointer;
+    outline: none;
+    user-select: none;
+    color: var(--text-primary);
+    transition: color 0.2s;
+}
+
+.console-summary:hover {
+    color: var(--accent-orange);
+}
+
+.console-details[open] .terminal-view {
+    margin-top: 1rem;
 }
 
 .terminal-view {
