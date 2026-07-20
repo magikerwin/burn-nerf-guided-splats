@@ -1,7 +1,7 @@
 use wasm_bindgen::prelude::*;
 use burn::backend::{Autodiff, Wgpu};
 use burn::optim::{Adam, AdamConfig};
-use burn::tensor::{backend::Backend, Tensor, TensorData};
+use burn::tensor::{Tensor, TensorData};
 use crate::model::gaussian::GaussianModel;
 use crate::model::nerf::NerfModel;
 use crate::model::ImageFitter;
