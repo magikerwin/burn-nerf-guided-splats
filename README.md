@@ -45,13 +45,15 @@ This vector is passed through a coordinate network (MLP) consisting of:
 ```
 ├── Cargo.toml          # Cargo dependencies and WASM/Native targets
 ├── README.md           # Project documentation and math
-├── index.html          # Web frontend layout
-├── style.css           # Modern dark-mode UI stylesheet
-├── index.js            # Frontend animation and canvas manager
+├── web                  # Web UI folder
+│   ├── index.html       # Web frontend dashboard layout (light mode)
+│   ├── style.css        # Premium mathematical grid theme stylesheet
+│   └── index.js         # WASM wrapper loader, animation loop, and chart manager
 └── src
     ├── main.rs         # Native CLI training & image exporter
     ├── lib.rs          # WASM entrypoints and bindings
     ├── utils.rs        # Image/Tensor conversions & synthetic targets
+    ├── hybrid.rs       # Spatial derivative & guided seeding bridge
     └── model
         ├── mod.rs      # ImageFitter trait declaration
         ├── gaussian.rs # 2D Gaussian Splatting implementation
@@ -79,6 +81,10 @@ This vector is passed through a coordinate network (MLP) consisting of:
     1. Fourier positional mapping output dimensions (`[H, W, 4L]`).
     2. Coordinate MLP feedforward dims (`[H, W, 3]`).
     3. Trait rendering and MSE loss convergence/scalar shapes (`[1]`).
+
+### Hybrid guided Seeding (`src/hybrid.rs`)
+*   **Importance Map:** `compute_importance_map(image)` computes spatial derivative gradients (finite differences) over a rendered tensor, identifying high-frequency details.
+*   **Seeding Bridge:** `seed_gaussians_from_importance(importance_map, num_gaussians, device)` samples new Gaussian center means proportional to the importance map density, allowing targeted optimization instead of uniform random initialization.
 
 ### Generic Optimizer & CLI Training (`src/training.rs`, `src/main.rs`)
 *   **Training Loop:** `train_step(model, optimizer, target_image, lr)` performs a single generic optimization step:
@@ -125,9 +131,11 @@ To compile the WebAssembly library and launch the WebGPU frontend:
    ```
 2. Build the project for the web target:
    ```bash
-   wasm-pack build --target web
+   wasm-pack build --target web --out-dir web/pkg
    ```
-3. Host the folder using a local server (e.g. using Python or Node.js) and open the page in a WebGPU-enabled browser:
+3. Host the `web` folder using a local server and open the page in a WebGPU-enabled browser:
    ```bash
-   python -m http.server 8080
+   npx http-server web
+   # or
+   python -m http.server -d web 8080
    ```
