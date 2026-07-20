@@ -21,9 +21,6 @@ pub struct WasmTrainingSession {
     device: <B as burn::tensor::backend::BackendTypes>::Device,
 }
 
-
-
-
 #[wasm_bindgen]
 impl WasmTrainingSession {
     #[wasm_bindgen(constructor)]
@@ -59,32 +56,34 @@ impl WasmTrainingSession {
         }
     }
 
-    pub fn step_gaussian(&mut self, lr: f64) -> f32 {
-        let (updated_model, loss) = train_step(
+    pub async fn step_gaussian(&mut self, lr: f64) -> f32 {
+        let (updated_model, loss_tensor) = train_step(
             self.gaussian_model.clone(),
             &mut self.gaussian_optim,
             &self.target_tensor,
             lr,
         );
         self.gaussian_model = updated_model;
-        loss
+        let data = loss_tensor.into_data_async().await.expect("Failed to read loss data");
+        data.as_slice::<f32>().unwrap()[0]
     }
 
-    pub fn step_nerf(&mut self, lr: f64) -> f32 {
-        let (updated_model, loss) = train_step(
+    pub async fn step_nerf(&mut self, lr: f64) -> f32 {
+        let (updated_model, loss_tensor) = train_step(
             self.nerf_model.clone(),
             &mut self.nerf_optim,
             &self.target_tensor,
             lr,
         );
         self.nerf_model = updated_model;
-        loss
+        let data = loss_tensor.into_data_async().await.expect("Failed to read loss data");
+        data.as_slice::<f32>().unwrap()[0]
     }
 
-    pub fn get_gaussian_render(&self) -> Vec<u8> {
+    pub async fn get_gaussian_render(&self) -> Vec<u8> {
         let rendered = self.gaussian_model.render(self.width, self.height);
-        // Transfer to host/CPU and map to [0, 255] u8
-        let data = rendered.into_data().into_vec::<f32>().expect("Failed to get tensor data");
+        // Transfer to host/CPU asynchronously and map to [0, 255] u8
+        let data = rendered.into_data_async().await.expect("Failed to read render data").into_vec::<f32>().expect("Failed to get tensor data");
         let mut rgb = Vec::with_capacity(data.len());
         for &val in data.iter() {
             rgb.push((val.clamp(0.0, 1.0) * 255.0).round() as u8);
@@ -92,10 +91,10 @@ impl WasmTrainingSession {
         rgb
     }
 
-    pub fn get_nerf_render(&self) -> Vec<u8> {
+    pub async fn get_nerf_render(&self) -> Vec<u8> {
         let rendered = self.nerf_model.render(self.width, self.height);
-        // Transfer to host/CPU and map to [0, 255] u8
-        let data = rendered.into_data().into_vec::<f32>().expect("Failed to get tensor data");
+        // Transfer to host/CPU asynchronously and map to [0, 255] u8
+        let data = rendered.into_data_async().await.expect("Failed to read render data").into_vec::<f32>().expect("Failed to get tensor data");
         let mut rgb = Vec::with_capacity(data.len());
         for &val in data.iter() {
             rgb.push((val.clamp(0.0, 1.0) * 255.0).round() as u8);
@@ -103,12 +102,27 @@ impl WasmTrainingSession {
         rgb
     }
 
-    pub fn seed_from_nerf(&mut self) {
+    pub async fn seed_from_nerf(&mut self) {
         let nerf_render = self.nerf_model.render(self.width, self.height);
-        let importance = crate::hybrid::compute_importance_map(nerf_render);
+        let importance_tensor = crate::hybrid::compute_importance_map(nerf_render);
+        
+        let dims = importance_tensor.shape().dims::<3>();
+        let h = dims[0];
+        let w = dims[1];
+        
+        // Fetch importance map values to CPU asynchronously
+        let importance_vec = importance_tensor
+            .into_data_async()
+            .await
+            .expect("Failed to read importance data")
+            .into_vec::<f32>()
+            .expect("Failed to get importance map data");
+
         let num_gaussians = self.gaussian_model.num_gaussians;
         let seeded_model = crate::hybrid::seed_gaussians_from_importance(
-            importance,
+            &importance_vec,
+            h,
+            w,
             num_gaussians,
             &self.device,
         );
@@ -116,10 +130,17 @@ impl WasmTrainingSession {
         self.gaussian_optim = AdamConfig::new().init();
     }
 
-    pub fn get_nerf_importance_map(&self) -> Vec<u8> {
+    pub async fn get_nerf_importance_map(&self) -> Vec<u8> {
         let nerf_render = self.nerf_model.render(self.width, self.height);
-        let importance = crate::hybrid::compute_importance_map(nerf_render);
-        let data = importance.into_data().into_vec::<f32>().expect("Failed to get tensor data");
+        let importance_tensor = crate::hybrid::compute_importance_map(nerf_render);
+        
+        let data = importance_tensor
+            .into_data_async()
+            .await
+            .expect("Failed to read importance data")
+            .into_vec::<f32>()
+            .expect("Failed to get tensor data");
+            
         let mut rgb = Vec::with_capacity(data.len() * 3);
         for &val in data.iter() {
             let v = (val.clamp(0.0, 1.0) * 255.0).round() as u8;
@@ -145,4 +166,3 @@ pub async fn init_webgpu() {
     )
     .await;
 }
-
