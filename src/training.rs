@@ -5,13 +5,13 @@ use burn::tensor::Tensor;
 use crate::model::ImageFitter;
 
 /// Executes a single optimization step for any model implementing `ImageFitter` and `AutodiffModule`.
-/// Returns the updated model and the scalar loss value.
+/// Returns the updated model and the loss tensor.
 pub fn train_step<B: AutodiffBackend, M, O>(
     model: M,
     optimizer: &mut O,
     target_image: &Tensor<B, 3>,
     lr: f64,
-) -> (M, f32)
+) -> (M, Tensor<B::InnerBackend, 1>)
 where
     M: ImageFitter<B> + AutodiffModule<B>,
     O: Optimizer<M, B>,
@@ -19,8 +19,8 @@ where
     // 1. Forward pass: compute the reconstruction loss
     let loss = model.forward_loss(target_image);
     
-    // Extract the loss value on the CPU for monitoring
-    let loss_val = loss.clone().into_data().into_vec::<f32>().expect("Failed to extract loss to CPU")[0];
+    // Extract the inner tensor (non-autodiff) before backward consumes it
+    let loss_inner = loss.clone().inner();
 
     // 2. Backward pass: compute gradients
     let grads = loss.backward();
@@ -31,7 +31,7 @@ where
     // 4. Update the model parameters via the optimizer
     let updated_model = optimizer.step(lr, model, grads);
 
-    (updated_model, loss_val)
+    (updated_model, loss_inner)
 }
 
 #[cfg(test)]
@@ -55,8 +55,9 @@ mod tests {
         let mut optimizer = AdamConfig::new().init();
 
         // 3. Perform a single training step
-        let (_updated_model, initial_loss) = train_step(model, &mut optimizer, &target, 1e-3);
+        let (_updated_model, loss_tensor) = train_step(model, &mut optimizer, &target, 1e-3);
+        let loss_val = loss_tensor.into_data().into_vec::<f32>().unwrap()[0];
 
-        assert!(initial_loss >= 0.0);
+        assert!(loss_val >= 0.0);
     }
 }
