@@ -29,43 +29,51 @@
         <main class="dashboard-grid">
             <!-- Sidebar Controls -->
             <section class="card controls-card">
-                <h2>Controls</h2>
+                <h2>Configuration Panel</h2>
                 
-                <div class="control-group">
-                    <label for="image-select">Target Image</label>
-                    <select id="image-select">
-                        <option value="synthetic">Synthetic Target (Circle)</option>
-                        <option value="upload">Upload Custom Image...</option>
-                    </select>
-                    <input type="file" id="image-upload" accept="image/*" class="hidden">
+                <div class="control-section">
+                    <h4>1. Target Setup</h4>
+                    <div class="control-group">
+                        <label for="image-select">Target Image Space</label>
+                        <select id="image-select">
+                            <option value="synthetic">Synthetic Target (Circle)</option>
+                            <option value="upload">Upload Custom Image...</option>
+                        </select>
+                        <input type="file" id="image-upload" accept="image/*" class="hidden">
+                    </div>
                 </div>
 
-                <div class="control-group">
-                    <label for="num-gaussians">Number of Gaussians ($N$)</label>
-                    <input type="number" id="num-gaussians" min="10" max="2000" value="500">
+                <div class="control-section">
+                    <h4 class="orange-text">2. Explicit Splats (GS)</h4>
+                    <div class="control-group">
+                        <label for="num-gaussians">Num Gaussians ($N$)</label>
+                        <input type="number" id="num-gaussians" min="10" max="2000" value="500">
+                    </div>
+                    <div class="control-group">
+                        <label for="lr-gaussian">Optimizer Learning Rate</label>
+                        <input type="number" id="lr-gaussian" step="0.001" min="0.0001" max="0.1" value="0.005">
+                    </div>
                 </div>
 
-                <div class="control-group">
-                    <label for="lr-gaussian">Gaussian Learning Rate</label>
-                    <input type="number" id="lr-gaussian" step="0.001" min="0.0001" max="0.1" value="0.005">
-                </div>
-
-                <div class="control-group">
-                    <label for="lr-nerf">NeRF Learning Rate</label>
-                    <input type="number" id="lr-nerf" step="0.0001" min="0.0001" max="0.05" value="0.001">
+                <div class="control-section">
+                    <h4 class="purple-text">3. Implicit MLP (NeRF)</h4>
+                    <div class="control-group">
+                        <label for="lr-nerf">Optimizer Learning Rate</label>
+                        <input type="number" id="lr-nerf" step="0.0001" min="0.0001" max="0.05" value="0.001">
+                    </div>
                 </div>
 
                 <div class="btn-group">
-                    <button id="btn-train" class="btn primary-btn">Start Training</button>
-                    <button id="btn-reset" class="btn secondary-btn">Reset Models</button>
+                    <button id="btn-train" class="btn primary-btn">Start Fitting</button>
+                    <button id="btn-reset" class="btn secondary-btn">Reset</button>
                 </div>
 
                 <div class="divider"></div>
 
-                <h3>Hybrid Bridge (Phase 6)</h3>
+                <h3>Hybrid Bridge Seeding</h3>
                 <div class="btn-group vertical">
-                    <button id="btn-nerf-pretrain" class="btn accent-btn" disabled>1. Pre-train NeRF (50 Steps)</button>
-                    <button id="btn-seed" class="btn accent-btn" disabled>2. Seed Gaussians from NeRF Edges</button>
+                    <button id="btn-nerf-pretrain" class="btn accent-btn" disabled>1. Coarse NeRF Pre-train (50 Steps)</button>
+                    <button id="btn-seed" class="btn accent-btn" disabled>2. Initialize GS on NeRF Edges</button>
                 </div>
             </section>
 
@@ -73,16 +81,16 @@
             <section class="visualizer-container">
                 <div class="canvases-row">
                     <!-- Target Card -->
-                    <div class="card canvas-card">
-                        <h3>Target Image</h3>
+                    <div class="card canvas-card target">
+                        <h3>Target Ground Truth</h3>
                         <div class="canvas-wrapper">
                             <canvas id="canvas-target" width="128" height="128"></canvas>
                         </div>
                     </div>
 
                     <!-- Gaussian Splat Card -->
-                    <div class="card canvas-card">
-                        <h3>Gaussian Splats (Explicit)</h3>
+                    <div class="card canvas-card gaussian">
+                        <h3 class="orange-text">Explicit Gaussians</h3>
                         <div class="canvas-wrapper">
                             <canvas id="canvas-gaussian" width="128" height="128"></canvas>
                         </div>
@@ -90,8 +98,8 @@
                     </div>
 
                     <!-- NeRF Card -->
-                    <div class="card canvas-card">
-                        <h3>Coordinate MLP / NeRF (Implicit)</h3>
+                    <div class="card canvas-card nerf">
+                        <h3 class="purple-text">Implicit Coordinate MLP</h3>
                         <div class="canvas-wrapper">
                             <canvas id="canvas-nerf" width="128" height="128"></canvas>
                         </div>
@@ -102,7 +110,7 @@
                 <div class="bottom-row">
                     <!-- Interactive Loss History Chart -->
                     <div class="card chart-card">
-                        <h3>Training Convergence (MSE Loss)</h3>
+                        <h3>Reconstruction Convergence (MSE Loss)</h3>
                         <div class="chart-wrapper">
                             <canvas id="canvas-chart" width="400" height="140"></canvas>
                         </div>
@@ -110,15 +118,15 @@
 
                     <!-- Comparison Slider Card -->
                     <div class="card blend-card">
-                        <h3>Visual Blending</h3>
+                        <h3>Cross-Representation Blend</h3>
                         <div class="blend-container">
                             <div class="blend-viewer">
                                 <canvas id="canvas-blend" width="128" height="128"></canvas>
                             </div>
                             <div class="slider-wrapper">
-                                <span>GS</span>
+                                <span class="orange-text font-bold">Explicit</span>
                                 <input type="range" id="blend-slider" min="0" max="1" step="0.01" value="0.5">
-                                <span>NeRF</span>
+                                <span class="purple-text font-bold">Implicit</span>
                             </div>
                         </div>
                     </div>
