@@ -30,19 +30,14 @@ use crate::model::gaussian::GaussianModel;
 
 /// Seeds Gaussian model means by sampling coordinates proportional to the importance map.
 pub fn seed_gaussians_from_importance<B: Backend>(
-    importance_map: Tensor<B, 3>,
+    importance_data: &[f32],
+    h: usize,
+    w: usize,
     num_gaussians: usize,
     device: &B::Device,
 ) -> GaussianModel<B> {
-    let shape = importance_map.shape();
-    let dims = shape.dims::<3>();
-    let h = dims[0];
-    let w = dims[1];
-
-    let mag = importance_map.into_data().into_vec::<f32>().expect("Failed to get importance map data");
-    
     // Compute sum for normalization
-    let sum: f32 = mag.iter().sum();
+    let sum: f32 = importance_data.iter().sum();
     
     let mut rng = rand::thread_rng();
     let mut sampled_means = Vec::with_capacity(num_gaussians * 2);
@@ -55,9 +50,9 @@ pub fn seed_gaussians_from_importance<B: Backend>(
         }
     } else {
         // Compute cumulative distribution function (CDF)
-        let mut cdf = Vec::with_capacity(mag.len());
+        let mut cdf = Vec::with_capacity(importance_data.len());
         let mut cumulative = 0.0;
-        for &val in mag.iter() {
+        for &val in importance_data.iter() {
             cumulative += val / sum;
             cdf.push(cumulative);
         }
@@ -130,11 +125,10 @@ mod tests {
             0.0,
             1.0,
         ];
-        let importance_tensor = Tensor::<Flex, 3>::from_data(TensorData::new(importance_data, [2, 2, 1]), &device);
         
         // Seed 100 Gaussians. They should all be placed in the bottom-right pixel (index 3).
         // Coordinates for index 3: row = 1, col = 1 -> y = 1.5/2 = 0.75, x = 1.5/2 = 0.75
-        let model = seed_gaussians_from_importance(importance_tensor, 100, &device);
+        let model = seed_gaussians_from_importance::<Flex>(&importance_data, 2, 2, 100, &device);
         assert_eq!(model.num_gaussians, 100);
 
         let means = model.means.val().into_data().into_vec::<f32>().unwrap();
