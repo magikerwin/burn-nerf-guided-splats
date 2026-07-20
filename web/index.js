@@ -190,32 +190,42 @@ function toggleTraining() {
 }
 
 // Core animation and optimization loop
-function trainingLoop() {
+async function trainingLoop() {
     if (!isTraining || !session) return;
 
     const lrGaussian = parseFloat(lrGaussianInput.value) || 0.005;
     const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
 
-    // 1. Step the Gaussian Splatting model
-    const lossG = session.step_gaussian(lrGaussian);
-    lossHistoryGaussian.push(lossG);
-    labelLossGaussian.textContent = `Loss: ${lossG.toFixed(5)}`;
+    try {
+        // 1. Step the Gaussian Splatting model
+        const lossG = await session.step_gaussian(lrGaussian);
+        lossHistoryGaussian.push(lossG);
+        labelLossGaussian.textContent = `Loss: ${lossG.toFixed(5)}`;
 
-    // 2. Step the NeRF MLP model
-    const lossN = session.step_nerf(lrNerf);
-    lossHistoryNerf.push(lossN);
-    labelLossNerf.textContent = `Loss: ${lossN.toFixed(5)}`;
+        // 2. Step the NeRF MLP model
+        const lossN = await session.step_nerf(lrNerf);
+        lossHistoryNerf.push(lossN);
+        labelLossNerf.textContent = `Loss: ${lossN.toFixed(5)}`;
 
-    // Render results
-    renderModelOutput(canvasGaussian, session.get_gaussian_render());
-    renderModelOutput(canvasNerf, session.get_nerf_render());
+        // Render results
+        renderModelOutput(canvasGaussian, await session.get_gaussian_render());
+        renderModelOutput(canvasNerf, await session.get_nerf_render());
 
-    // Update blended view & line chart
-    updateBlendCanvas();
-    drawLossChart();
+        // Update blended view & line chart
+        updateBlendCanvas();
+        drawLossChart();
+    } catch (e) {
+        console.error("Error during training step:", e);
+        isTraining = false;
+        btnTrain.textContent = 'Start Training';
+        btnTrain.classList.remove('btn-stop');
+        return;
+    }
 
     // Loop
-    requestAnimationFrame(trainingLoop);
+    if (isTraining) {
+        requestAnimationFrame(() => trainingLoop());
+    }
 }
 
 // Pre-train NeRF to capture coarse edges
@@ -229,43 +239,57 @@ async function runNeRFPretraining() {
     
     const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
     
-    // Train for 50 steps
-    for (let step = 1; step <= 50; step++) {
-        const lossN = session.step_nerf(lrNerf);
-        lossHistoryNerf.push(lossN);
-        labelLossNerf.textContent = `Loss: ${lossN.toFixed(5)}`;
-        
-        if (step % 5 === 0 || step === 50) {
-            renderModelOutput(canvasNerf, session.get_nerf_render());
-            drawLossChart();
-            // Yield to main thread to keep browser UI responsive
-            await new Promise(resolve => setTimeout(resolve, 10));
+    try {
+        // Train for 50 steps
+        for (let step = 1; step <= 50; step++) {
+            const lossN = await session.step_nerf(lrNerf);
+            lossHistoryNerf.push(lossN);
+            labelLossNerf.textContent = `Loss: ${lossN.toFixed(5)}`;
+            
+            if (step % 5 === 0 || step === 50) {
+                renderModelOutput(canvasNerf, await session.get_nerf_render());
+                drawLossChart();
+                // Yield to main thread to keep browser UI responsive
+                await new Promise(resolve => setTimeout(resolve, 10));
+            }
         }
+        
+        btnPretrain.textContent = 'NeRF Pre-trained!';
+        btnPretrain.disabled = true;
+        
+        // Fetch and draw importance map to the Blend canvas so the user can see it!
+        const importanceData = await session.get_nerf_importance_map();
+        // The importance map dimension is (width - 1) x (height - 1) = 127 x 127
+        renderGrayscaleOutput(canvasBlend, importanceData, width - 1, height - 1);
+        
+        btnSeed.disabled = false;
+    } catch (e) {
+        console.error("Error during NeRF pre-training:", e);
+        btnPretrain.disabled = false;
+        btnPretrain.textContent = '1. Pre-train NeRF (50 Steps)';
     }
-    
-    btnPretrain.textContent = 'NeRF Pre-trained!';
-    btnPretrain.disabled = true;
-    
-    // Fetch and draw importance map to the Blend canvas so the user can see it!
-    const importanceData = session.get_nerf_importance_map();
-    // The importance map dimension is (width - 1) x (height - 1) = 127 x 127
-    renderGrayscaleOutput(canvasBlend, importanceData, width - 1, height - 1);
-    
-    btnSeed.disabled = false;
 }
 
 // Seed Gaussians proportional to NeRF's spatial gradient
-function seedGaussiansFromEdges() {
-    session.seed_from_nerf();
-    // Render the initial state of the seeded Gaussians (should align to edges!)
-    renderModelOutput(canvasGaussian, session.get_gaussian_render());
-    btnSeed.textContent = 'Gaussians Seeded!';
+async function seedGaussiansFromEdges() {
     btnSeed.disabled = true;
+    btnSeed.textContent = 'Seeding Gaussians...';
+    try {
+        await session.seed_from_nerf();
+        // Render the initial state of the seeded Gaussians (should align to edges!)
+        renderModelOutput(canvasGaussian, await session.get_gaussian_render());
+        btnSeed.textContent = 'Gaussians Seeded!';
+        btnSeed.disabled = true;
 
-    // Reset loss histories for fresh chart tracking
-    lossHistoryGaussian = [];
-    lossHistoryNerf = [];
-    drawLossChart();
+        // Reset loss histories for fresh chart tracking
+        lossHistoryGaussian = [];
+        lossHistoryNerf = [];
+        drawLossChart();
+    } catch (e) {
+        console.error("Error during guided seeding:", e);
+        btnSeed.disabled = false;
+        btnSeed.textContent = '2. Seed Gaussians from NeRF Edges';
+    }
 }
 
 // Render raw RGB data from Rust onto Web Canvas
