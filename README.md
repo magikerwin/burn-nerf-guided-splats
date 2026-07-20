@@ -133,9 +133,8 @@ To compile the WebAssembly library and launch the WebGPU frontend:
    ```bash
    wasm-pack build --target web --out-dir web/pkg
    ```
-3. Host the `web` folder using a local server and open the page in a WebGPU-enabled browser:
+3. Host the `web` folder. We recommend installing and using `basic-http-server` via Cargo:
    ```bash
-   npx http-server web
-   # or
-   python -m http.server -d web 8080
+   cargo install basic-http-server
+   basic-http-server web
    ```
