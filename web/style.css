@@ -314,10 +314,10 @@ select:focus, input[type="number"]:focus {
 }
 
 .canvas-wrapper {
-    background: #090d16; /* Dark background to make renders pop */
+    background: #e2e8f0; /* Light gray background to fit the light theme */
     border-radius: 14px;
     padding: 0.65rem;
-    border: 1px solid rgba(0, 0, 0, 0.06);
+    border: 1px solid rgba(0, 0, 0, 0.08);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -333,7 +333,7 @@ select:focus, input[type="number"]:focus {
     left: 4px;
     right: 4px;
     height: 1px;
-    background: rgba(255, 255, 255, 0.04);
+    background: rgba(15, 23, 42, 0.04);
     pointer-events: none;
 }
 .canvas-wrapper::after {
@@ -343,7 +343,7 @@ select:focus, input[type="number"]:focus {
     top: 4px;
     bottom: 4px;
     width: 1px;
-    background: rgba(255, 255, 255, 0.04);
+    background: rgba(15, 23, 42, 0.04);
     pointer-events: none;
 }
 
@@ -396,10 +396,10 @@ canvas {
 }
 
 .blend-viewer {
-    background: #090d16;
+    background: #e2e8f0; /* Light gray background to fit the light theme */
     border-radius: 14px;
     padding: 0.65rem;
-    border: 1px solid rgba(0, 0, 0, 0.06);
+    border: 1px solid rgba(0, 0, 0, 0.08);
     display: inline-flex;
 }
 
@@ -448,3 +448,46 @@ input[type="range"] {
         grid-template-columns: 1fr;
     }
 }
+
+.console-card {
+    margin-top: 1.5rem;
+    width: 100%;
+}
+
+.terminal-view {
+    background: #ffffff; /* White background for the terminal in light mode */
+    color: #334155; /* Slate color for standard logs */
+    font-family: 'Courier New', Courier, monospace;
+    padding: 1rem;
+    height: 180px;
+    overflow-y: auto;
+    border-radius: 12px;
+    border: 1px solid var(--card-border);
+    font-size: 0.85rem;
+    line-height: 1.5;
+    text-align: left;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+
+.log-line {
+    margin-bottom: 0.25rem;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.log-line.system {
+    color: #2563eb; /* Clean blue for systems logs */
+    font-weight: 600;
+}
+
+.log-line.error {
+    color: #dc2626; /* Deep red for error logs */
+    font-weight: 600;
+}
+
+.log-line.warn {
+    color: #d97706; /* Amber/orange for warnings */
+    font-weight: 600;
+}
+
+

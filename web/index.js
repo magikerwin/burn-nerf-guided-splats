@@ -1,4 +1,35 @@
-import init, { WasmTrainingSession, init_panic_hook } from './pkg/burn_nerf_guided_splats.js';
+import init, { WasmTrainingSession, init_panic_hook, init_webgpu } from './pkg/burn_nerf_guided_splats.js';
+
+// Redirect Console output to HTML developer console
+const developerConsole = document.getElementById('developer-console');
+
+function logToTerminal(message, type = 'info') {
+    if (!developerConsole) return;
+    const line = document.createElement('div');
+    line.className = `log-line ${type}`;
+    line.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+    developerConsole.appendChild(line);
+    developerConsole.scrollTop = developerConsole.scrollHeight;
+}
+
+const orgLog = console.log;
+const orgWarn = console.warn;
+const orgError = console.error;
+
+console.log = function(...args) {
+    orgLog.apply(console, args);
+    logToTerminal(args.join(' '), 'info');
+};
+
+console.warn = function(...args) {
+    orgWarn.apply(console, args);
+    logToTerminal(args.join(' '), 'warn');
+};
+
+console.error = function(...args) {
+    orgError.apply(console, args);
+    logToTerminal(args.join(' '), 'error');
+};
 
 let session = null;
 let isTraining = false;
@@ -33,6 +64,9 @@ const labelLossNerf = document.getElementById('loss-nerf');
 async function start() {
     await init();
     init_panic_hook();
+    
+    // Initialize WebGPU context asynchronously first
+    await init_webgpu();
     
     // Set up default synthetic target image
     generateSyntheticTarget();
