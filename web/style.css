@@ -312,3 +312,18 @@ canvas {
         grid-template-columns: 1fr;
     }
 }
+
+.github-link {
+    position: absolute;
+    top: 1.5rem;
+    right: 1.5rem;
+    color: var(--text-muted);
+    transition: color 0.2s, transform 0.2s;
+    z-index: 100;
+}
+
+.github-link:hover {
+    color: var(--text-primary);
+    transform: scale(1.05);
+}
+
