@@ -1,15 +1,15 @@
 :root {
-    --bg-dark: #030712;
-    --card-bg: rgba(17, 24, 39, 0.7);
-    --card-border: rgba(255, 255, 255, 0.05);
-    --text-primary: #f9fafb;
-    --text-muted: #9ca3af;
-    --accent-orange: #f97316;
-    --accent-purple: #8b5cf6;
-    --accent-cyan: #06b6d4;
-    --accent-blue: #3b82f6;
-    --orange-glow: rgba(249, 115, 22, 0.15);
-    --purple-glow: rgba(139, 92, 246, 0.15);
+    --bg-dark: #f8fafc;
+    --card-bg: rgba(255, 255, 255, 0.8);
+    --card-border: rgba(0, 0, 0, 0.06);
+    --text-primary: #0f172a;
+    --text-muted: #475569;
+    --accent-orange: #ea580c;
+    --accent-purple: #7c3aed;
+    --accent-cyan: #0891b2;
+    --accent-blue: #2563eb;
+    --orange-glow: rgba(234, 88, 12, 0.06);
+    --purple-glow: rgba(124, 58, 237, 0.06);
 }
 
 * {
@@ -20,12 +20,12 @@
 
 body {
     background-color: var(--bg-dark);
-    /* High-tech reconstruction grid background */
+    /* Clean light-theme mathematical grid background */
     background-image: 
-        radial-gradient(at 0% 0%, rgba(249, 115, 22, 0.05) 0px, transparent 50%),
-        radial-gradient(at 100% 0%, rgba(139, 92, 246, 0.05) 0px, transparent 50%),
-        linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+        radial-gradient(at 0% 0%, rgba(234, 88, 12, 0.04) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(124, 58, 237, 0.04) 0px, transparent 50%),
+        linear-gradient(rgba(15, 23, 42, 0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(15, 23, 42, 0.02) 1px, transparent 1px);
     background-size: 100% 100%, 100% 100%, 32px 32px, 32px 32px;
     color: var(--text-primary);
     font-family: 'Outfit', sans-serif;
@@ -41,7 +41,7 @@ body {
     left: 25%;
     width: 50vw;
     height: 50vw;
-    background: radial-gradient(circle, rgba(139, 92, 246, 0.06) 0%, rgba(249, 115, 22, 0.04) 50%, transparent 100%);
+    background: radial-gradient(circle, rgba(124, 58, 237, 0.03) 0%, rgba(234, 88, 12, 0.02) 50%, transparent 100%);
     filter: blur(120px);
     z-index: -1;
     pointer-events: none;
@@ -77,11 +77,11 @@ header {
     font-size: 0.7rem;
     font-weight: 600;
     text-transform: uppercase;
-    background: rgba(249, 115, 22, 0.1);
+    background: rgba(234, 88, 12, 0.08);
     color: var(--accent-orange);
     padding: 0.25rem 0.6rem;
     border-radius: 9999px;
-    border: 1px solid rgba(249, 115, 22, 0.2);
+    border: 1px solid rgba(234, 88, 12, 0.15);
     letter-spacing: 0.5px;
 }
 
@@ -108,13 +108,13 @@ header {
     backdrop-filter: blur(20px);
     border-radius: 20px;
     padding: 1.75rem;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 8px 30px rgba(15, 23, 42, 0.06);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .card:hover {
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
-    border-color: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 12px 40px rgba(15, 23, 42, 0.1);
+    border-color: rgba(0, 0, 0, 0.1);
 }
 
 h2, h3 {
@@ -125,9 +125,7 @@ h2, h3 {
 
 h2 {
     font-size: 1.5rem;
-    background: linear-gradient(135deg, #fff 0%, #a3a3a3 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: var(--text-primary);
 }
 
 h3 {
@@ -143,11 +141,11 @@ h3 {
 
 /* Control Sections */
 .control-section {
-    background: rgba(255, 255, 255, 0.02);
+    background: rgba(0, 0, 0, 0.015);
     border-radius: 12px;
     padding: 1rem;
     margin-bottom: 1.25rem;
-    border: 1px solid rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(0, 0, 0, 0.03);
 }
 
 .control-section h4 {
@@ -175,8 +173,8 @@ h3 {
 
 select, input[type="number"], input[type="range"] {
     width: 100%;
-    background: #090d16;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: #ffffff;
+    border: 1px solid rgba(0, 0, 0, 0.12);
     color: var(--text-primary);
     border-radius: 8px;
     padding: 0.5rem 0.75rem;
@@ -188,7 +186,7 @@ select, input[type="number"], input[type="range"] {
 
 select:focus, input[type="number"]:focus {
     border-color: var(--accent-orange);
-    box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.15);
+    box-shadow: 0 0 0 2px rgba(234, 88, 12, 0.12);
 }
 
 .hidden {
@@ -234,38 +232,37 @@ select:focus, input[type="number"]:focus {
 
 .primary-btn {
     flex: 1.5;
-    background: linear-gradient(135deg, var(--accent-orange) 0%, #ea580c 100%);
+    background: linear-gradient(135deg, var(--accent-orange) 0%, #d97706 100%);
     color: white;
-    box-shadow: 0 4px 12px rgba(249, 115, 22, 0.2);
+    box-shadow: 0 4px 12px rgba(234, 88, 12, 0.15);
 }
 
 .primary-btn:hover {
     opacity: 0.95;
     transform: translateY(-1px);
-    box-shadow: 0 6px 16px rgba(249, 115, 22, 0.3);
+    box-shadow: 0 6px 16px rgba(234, 88, 12, 0.25);
 }
 
 .secondary-btn {
     flex: 1;
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(0, 0, 0, 0.03);
     color: var(--text-primary);
     border: 1px solid var(--card-border);
 }
 
 .secondary-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(0, 0, 0, 0.06);
 }
 
 .accent-btn {
-    background: rgba(139, 92, 246, 0.08);
+    background: rgba(124, 58, 237, 0.05);
     color: var(--accent-purple);
-    border: 1px solid rgba(139, 92, 246, 0.25);
-    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.05);
+    border: 1px solid rgba(124, 58, 237, 0.15);
 }
 
 .accent-btn:not(:disabled):hover {
-    background: rgba(139, 92, 246, 0.15);
-    border-color: rgba(139, 92, 246, 0.4);
+    background: rgba(124, 58, 237, 0.1);
+    border-color: rgba(124, 58, 237, 0.3);
     transform: translateY(-1px);
 }
 
@@ -298,29 +295,29 @@ select:focus, input[type="number"]:focus {
 
 /* Gaussian canvas specific glow */
 .canvas-card.gaussian {
-    border-color: rgba(249, 115, 22, 0.2);
-    box-shadow: 0 8px 32px rgba(249, 115, 22, 0.05);
+    border-color: rgba(234, 88, 12, 0.15);
+    box-shadow: 0 8px 30px rgba(234, 88, 12, 0.02);
 }
 .canvas-card.gaussian:hover {
-    border-color: rgba(249, 115, 22, 0.4);
-    box-shadow: 0 12px 40px rgba(249, 115, 22, 0.1);
+    border-color: rgba(234, 88, 12, 0.3);
+    box-shadow: 0 12px 40px rgba(234, 88, 12, 0.06);
 }
 
 /* NeRF canvas specific glow */
 .canvas-card.nerf {
-    border-color: rgba(139, 92, 246, 0.2);
-    box-shadow: 0 8px 32px rgba(139, 92, 246, 0.05);
+    border-color: rgba(124, 58, 237, 0.15);
+    box-shadow: 0 8px 30px rgba(124, 58, 237, 0.02);
 }
 .canvas-card.nerf:hover {
-    border-color: rgba(139, 92, 246, 0.4);
-    box-shadow: 0 12px 40px rgba(139, 92, 246, 0.1);
+    border-color: rgba(124, 58, 237, 0.3);
+    box-shadow: 0 12px 40px rgba(124, 58, 237, 0.06);
 }
 
 .canvas-wrapper {
-    background: #02050b;
+    background: #090d16; /* Dark background to make renders pop */
     border-radius: 14px;
     padding: 0.65rem;
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(0, 0, 0, 0.06);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -336,7 +333,7 @@ select:focus, input[type="number"]:focus {
     left: 4px;
     right: 4px;
     height: 1px;
-    background: rgba(255, 255, 255, 0.03);
+    background: rgba(255, 255, 255, 0.04);
     pointer-events: none;
 }
 .canvas-wrapper::after {
@@ -346,7 +343,7 @@ select:focus, input[type="number"]:focus {
     top: 4px;
     bottom: 4px;
     width: 1px;
-    background: rgba(255, 255, 255, 0.03);
+    background: rgba(255, 255, 255, 0.04);
     pointer-events: none;
 }
 
@@ -358,23 +355,24 @@ canvas {
 }
 
 .loss-badge {
-    background: rgba(0, 0, 0, 0.4);
+    background: #ffffff;
     padding: 0.35rem 0.85rem;
     border-radius: 9999px;
     font-size: 0.8rem;
     color: var(--text-muted);
     font-weight: 600;
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
 }
 
 .canvas-card.gaussian .loss-badge {
     color: var(--accent-orange);
-    border-color: rgba(249, 115, 22, 0.2);
+    border-color: rgba(234, 88, 12, 0.2);
 }
 
 .canvas-card.nerf .loss-badge {
     color: var(--accent-purple);
-    border-color: rgba(139, 92, 246, 0.2);
+    border-color: rgba(124, 58, 237, 0.2);
 }
 
 /* Bottom Grid Layout */
@@ -398,10 +396,10 @@ canvas {
 }
 
 .blend-viewer {
-    background: #02050b;
+    background: #090d16;
     border-radius: 14px;
     padding: 0.65rem;
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(0, 0, 0, 0.06);
     display: inline-flex;
 }
 
