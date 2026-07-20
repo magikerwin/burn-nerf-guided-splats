@@ -2,6 +2,10 @@
 name = "burn-nerf-guided-splats"
 version = "0.1.0"
 edition = "2024"
+description = "Educational 2D Gaussian Splatting vs. NeRF comparison and hybrid guided seeding playground in Burn."
+repository = "https://github.com/magikerwin/burn-nerf-guided-splats"
+license = "MIT OR Apache-2.0"
+
 
 [lib]
 crate-type = ["cdylib", "rlib"]
