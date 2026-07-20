@@ -60,6 +60,12 @@ const blendSlider = document.getElementById('blend-slider');
 const labelLossGaussian = document.getElementById('loss-gaussian');
 const labelLossNerf = document.getElementById('loss-nerf');
 
+// Pipeline Step References
+const step1Card = document.getElementById('step-1-card');
+const step1Status = document.getElementById('step-1-status');
+const step2Card = document.getElementById('step-2-card');
+const step2Status = document.getElementById('step-2-status');
+
 // Initialize WASM
 async function start() {
     await init();
@@ -149,7 +155,13 @@ function resetSession() {
     btnPretrain.disabled = false;
     btnPretrain.textContent = '1. Pre-train NeRF (50 Steps)';
     btnSeed.disabled = true;
-    btnSeed.textContent = '2. Seed Gaussians from NeRF Edges';
+    btnSeed.textContent = '2. Initialize GS on Edges';
+
+    // Reset pipeline step cards UI
+    step1Card.className = 'pipeline-step active';
+    step1Status.textContent = '⚪';
+    step2Card.className = 'pipeline-step';
+    step2Status.textContent = '⚪';
 
     const numGaussians = parseInt(numGaussiansInput.value) || 500;
     
@@ -247,6 +259,8 @@ async function runNeRFPretraining() {
     btnPretrain.disabled = true;
     btnPretrain.textContent = 'Training NeRF...';
     
+    step1Status.textContent = '⏳';
+    
     const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
     console.log("[System] Starting NeRF pre-training for 50 steps to extract spatial gradient importance map...");
     
@@ -269,6 +283,11 @@ async function runNeRFPretraining() {
         
         btnPretrain.textContent = 'NeRF Pre-trained!';
         btnPretrain.disabled = true;
+        
+        step1Card.className = 'pipeline-step completed';
+        step1Status.textContent = '✅';
+        step2Card.className = 'pipeline-step active';
+        
         console.log(`[System] NeRF pre-training complete. Final NeRF Loss: ${finalLoss.toFixed(5)}`);
         
         // Fetch and draw importance map to the Blend canvas so the user can see it!
@@ -282,13 +301,15 @@ async function runNeRFPretraining() {
         console.error("Error during NeRF pre-training:", e);
         btnPretrain.disabled = false;
         btnPretrain.textContent = '1. Pre-train NeRF (50 Steps)';
+        step1Status.textContent = '❌';
     }
 }
 
 // Seed Gaussians proportional to NeRF's spatial gradient
 async function seedGaussiansFromEdges() {
     btnSeed.disabled = true;
-    btnSeed.textContent = 'Seeding Gaussians...';
+    btnSeed.textContent = 'Seeding...';
+    step2Status.textContent = '⏳';
     console.log("[System] Seeding Gaussians on high-frequency edges...");
     try {
         await session.seed_from_nerf();
@@ -296,6 +317,10 @@ async function seedGaussiansFromEdges() {
         renderModelOutput(canvasGaussian, await session.get_gaussian_render());
         btnSeed.textContent = 'Gaussians Seeded!';
         btnSeed.disabled = true;
+        
+        step2Card.className = 'pipeline-step completed';
+        step2Status.textContent = '✅';
+        
         console.log("[System] Guided seeding complete! Re-initialized 500 Gaussians directly along circle boundaries.");
 
         // Reset loss histories for fresh chart tracking
@@ -305,7 +330,8 @@ async function seedGaussiansFromEdges() {
     } catch (e) {
         console.error("Error during guided seeding:", e);
         btnSeed.disabled = false;
-        btnSeed.textContent = '2. Seed Gaussians from NeRF Edges';
+        btnSeed.textContent = '2. Initialize GS on Edges';
+        step2Status.textContent = '❌';
     }
 }
 
