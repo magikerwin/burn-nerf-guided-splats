@@ -15,11 +15,14 @@ pub struct WasmTrainingSession {
     height: usize,
     target_tensor: Tensor<B, 3>,
     gaussian_model: GaussianModel<B>,
-    gaussian_optim: Adam<GaussianModel<B>, B>,
+    gaussian_optim: burn::optim::adaptor::OptimizerAdaptor<Adam, GaussianModel<B>, B>,
     nerf_model: NerfModel<B>,
-    nerf_optim: Adam<NerfModel<B>, B>,
-    device: <Wgpu as Backend>::Device,
+    nerf_optim: burn::optim::adaptor::OptimizerAdaptor<Adam, NerfModel<B>, B>,
+    device: <B as burn::tensor::backend::BackendTypes>::Device,
 }
+
+
+
 
 #[wasm_bindgen]
 impl WasmTrainingSession {

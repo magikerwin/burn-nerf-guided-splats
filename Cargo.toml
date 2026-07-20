@@ -7,7 +7,7 @@ edition = "2024"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-burn = { version = "0.21.0", features = ["wgpu", "autodiff", "train", "flex"] }
+burn = { version = "0.21.0", features = ["wgpu", "autodiff", "flex"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 rand = "0.8"
 serde = { version = "1.0", features = ["derive"] }
@@ -17,3 +17,8 @@ wasm-bindgen = "0.2"
 console_error_panic_hook = "0.1"
 web-sys = { version = "0.3", features = ["console", "CanvasRenderingContext2d", "HtmlCanvasElement", "ImageData"] }
 wasm-bindgen-futures = "0.4"
+getrandom = { version = "0.3", features = ["wasm_js"] }
+getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"] }
+getrandom_04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
+
+
