@@ -155,6 +155,7 @@ function resetSession() {
     
     // Create new session in Rust WASM
     session = new WasmTrainingSession(width, height, numGaussians, targetRgb);
+    console.log(`[System] Initialized new session with ${numGaussians} Gaussians.`);
 
     lossHistoryGaussian = [];
     lossHistoryNerf = [];
@@ -171,7 +172,7 @@ function resetSession() {
 
 function clearCanvas(canvas) {
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#0f172a';
+    ctx.fillStyle = '#f1f5f9';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
 
@@ -181,10 +182,14 @@ function toggleTraining() {
         isTraining = false;
         btnTrain.textContent = 'Start Training';
         btnTrain.classList.remove('btn-stop');
+        console.log(`[System] Training paused at Step ${lossHistoryGaussian.length}.`);
     } else {
         isTraining = true;
         btnTrain.textContent = 'Pause Training';
         btnTrain.classList.add('btn-stop');
+        const lrGaussian = parseFloat(lrGaussianInput.value) || 0.005;
+        const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
+        console.log(`[System] Starting training loop. LR: Explicit GS = ${lrGaussian}, Implicit NeRF = ${lrNerf}`);
         requestAnimationFrame(trainingLoop);
     }
 }
@@ -214,6 +219,11 @@ async function trainingLoop() {
         // Update blended view & line chart
         updateBlendCanvas();
         drawLossChart();
+
+        // Periodically log progress to developer console
+        if (lossHistoryGaussian.length % 50 === 0) {
+            console.log(`[Step ${lossHistoryGaussian.length}] GS Loss: ${lossG.toFixed(5)} | NeRF Loss: ${lossN.toFixed(5)}`);
+        }
     } catch (e) {
         console.error("Error during training step:", e);
         isTraining = false;
@@ -238,13 +248,16 @@ async function runNeRFPretraining() {
     btnPretrain.textContent = 'Training NeRF...';
     
     const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
+    console.log("[System] Starting NeRF pre-training for 50 steps to extract spatial gradient importance map...");
     
     try {
+        let finalLoss = 0.0;
         // Train for 50 steps
         for (let step = 1; step <= 50; step++) {
             const lossN = await session.step_nerf(lrNerf);
             lossHistoryNerf.push(lossN);
             labelLossNerf.textContent = `Loss: ${lossN.toFixed(5)}`;
+            finalLoss = lossN;
             
             if (step % 5 === 0 || step === 50) {
                 renderModelOutput(canvasNerf, await session.get_nerf_render());
@@ -256,8 +269,10 @@ async function runNeRFPretraining() {
         
         btnPretrain.textContent = 'NeRF Pre-trained!';
         btnPretrain.disabled = true;
+        console.log(`[System] NeRF pre-training complete. Final NeRF Loss: ${finalLoss.toFixed(5)}`);
         
         // Fetch and draw importance map to the Blend canvas so the user can see it!
+        console.log("[System] Extracting spatial gradient importance map from implicit network...");
         const importanceData = await session.get_nerf_importance_map();
         // The importance map dimension is (width - 1) x (height - 1) = 127 x 127
         renderGrayscaleOutput(canvasBlend, importanceData, width - 1, height - 1);
@@ -274,12 +289,14 @@ async function runNeRFPretraining() {
 async function seedGaussiansFromEdges() {
     btnSeed.disabled = true;
     btnSeed.textContent = 'Seeding Gaussians...';
+    console.log("[System] Seeding Gaussians on high-frequency edges...");
     try {
         await session.seed_from_nerf();
         // Render the initial state of the seeded Gaussians (should align to edges!)
         renderModelOutput(canvasGaussian, await session.get_gaussian_render());
         btnSeed.textContent = 'Gaussians Seeded!';
         btnSeed.disabled = true;
+        console.log("[System] Guided seeding complete! Re-initialized 500 Gaussians directly along circle boundaries.");
 
         // Reset loss histories for fresh chart tracking
         lossHistoryGaussian = [];
