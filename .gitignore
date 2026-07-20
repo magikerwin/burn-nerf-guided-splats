@@ -29,3 +29,7 @@ target
 target.png
 output_gaussian.png
 output_nerf.png
+
+# Ignore compiled WASM packages locally
+web/pkg/
+
