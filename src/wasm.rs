@@ -135,3 +135,14 @@ impl WasmTrainingSession {
 pub fn init_panic_hook() {
     console_error_panic_hook::set_once();
 }
+
+#[wasm_bindgen]
+pub async fn init_webgpu() {
+    let device = Default::default();
+    burn::backend::wgpu::init_setup_async::<burn::backend::wgpu::graphics::WebGpu>(
+        &device,
+        Default::default(),
+    )
+    .await;
+}
+
