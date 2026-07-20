@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BurnSplat - Explicit vs. Implicit 2D Renderer</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Outfit Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="glow-bg"></div>
+    <div class="app-container">
+        <header>
+            <div class="logo">
+                <span class="gradient-text">BurnSplat</span> 
+                <span class="tag">2D Explicit vs. Implicit</span>
+            </div>
+            <p class="subtitle">An educational playground comparing 2D Gaussian Splatting and Coordinate MLP (NeRF) side-by-side using Burn & WebGPU</p>
+        </header>
+
+        <main class="dashboard-grid">
+            <!-- Sidebar Controls -->
+            <section class="card controls-card">
+                <h2>Controls</h2>
+                
+                <div class="control-group">
+                    <label for="image-select">Target Image</label>
+                    <select id="image-select">
+                        <option value="synthetic">Synthetic Target (Circle)</option>
+                        <option value="upload">Upload Custom Image...</option>
+                    </select>
+                    <input type="file" id="image-upload" accept="image/*" class="hidden">
+                </div>
+
+                <div class="control-group">
+                    <label for="num-gaussians">Number of Gaussians ($N$)</label>
+                    <input type="number" id="num-gaussians" min="10" max="2000" value="500">
+                </div>
+
+                <div class="control-group">
+                    <label for="lr-gaussian">Gaussian Learning Rate</label>
+                    <input type="number" id="lr-gaussian" step="0.001" min="0.0001" max="0.1" value="0.005">
+                </div>
+
+                <div class="control-group">
+                    <label for="lr-nerf">NeRF Learning Rate</label>
+                    <input type="number" id="lr-nerf" step="0.0001" min="0.0001" max="0.05" value="0.001">
+                </div>
+
+                <div class="btn-group">
+                    <button id="btn-train" class="btn primary-btn">Start Training</button>
+                    <button id="btn-reset" class="btn secondary-btn">Reset Models</button>
+                </div>
+
+                <div class="divider"></div>
+
+                <h3>Hybrid Bridge (Phase 6)</h3>
+                <div class="btn-group vertical">
+                    <button id="btn-nerf-pretrain" class="btn accent-btn" disabled>1. Pre-train NeRF (50 Steps)</button>
+                    <button id="btn-seed" class="btn accent-btn" disabled>2. Seed Gaussians from NeRF Edges</button>
+                </div>
+            </section>
+
+            <!-- Main Live View area -->
+            <section class="visualizer-container">
+                <div class="canvases-row">
+                    <!-- Target Card -->
+                    <div class="card canvas-card">
+                        <h3>Target Image</h3>
+                        <div class="canvas-wrapper">
+                            <canvas id="canvas-target" width="128" height="128"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Gaussian Splat Card -->
+                    <div class="card canvas-card">
+                        <h3>Gaussian Splats (Explicit)</h3>
+                        <div class="canvas-wrapper">
+                            <canvas id="canvas-gaussian" width="128" height="128"></canvas>
+                        </div>
+                        <div class="loss-badge" id="loss-gaussian">Loss: --</div>
+                    </div>
+
+                    <!-- NeRF Card -->
+                    <div class="card canvas-card">
+                        <h3>Coordinate MLP / NeRF (Implicit)</h3>
+                        <div class="canvas-wrapper">
+                            <canvas id="canvas-nerf" width="128" height="128"></canvas>
+                        </div>
+                        <div class="loss-badge" id="loss-nerf">Loss: --</div>
+                    </div>
+                </div>
+
+                <div class="bottom-row">
+                    <!-- Interactive Loss History Chart -->
+                    <div class="card chart-card">
+                        <h3>Training Convergence (MSE Loss)</h3>
+                        <div class="chart-wrapper">
+                            <canvas id="canvas-chart" width="400" height="140"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Comparison Slider Card -->
+                    <div class="card blend-card">
+                        <h3>Visual Blending</h3>
+                        <div class="blend-container">
+                            <div class="blend-viewer">
+                                <canvas id="canvas-blend" width="128" height="128"></canvas>
+                            </div>
+                            <div class="slider-wrapper">
+                                <span>GS</span>
+                                <input type="range" id="blend-slider" min="0" max="1" step="0.01" value="0.5">
+                                <span>NeRF</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Load WASM initialization script -->
+    <script type="module" src="index.js"></script>
+</body>
+</html>
