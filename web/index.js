@@ -16,6 +16,8 @@ const lrGaussianInput = document.getElementById('lr-gaussian');
 const lrNerfInput = document.getElementById('lr-nerf');
 const btnTrain = document.getElementById('btn-train');
 const btnReset = document.getElementById('btn-reset');
+const btnPretrain = document.getElementById('btn-nerf-pretrain');
+const btnSeed = document.getElementById('btn-seed');
 
 const canvasTarget = document.getElementById('canvas-target');
 const canvasGaussian = document.getElementById('canvas-gaussian');
@@ -42,6 +44,8 @@ async function start() {
     btnTrain.addEventListener('click', toggleTraining);
     btnReset.addEventListener('click', resetSession);
     blendSlider.addEventListener('input', updateBlendCanvas);
+    btnPretrain.addEventListener('click', runNeRFPretraining);
+    btnSeed.addEventListener('click', seedGaussiansFromEdges);
 }
 
 // Generate default target image: red circle on dark blue background
@@ -107,6 +111,11 @@ function resetSession() {
     isTraining = false;
     btnTrain.textContent = 'Start Training';
     btnTrain.classList.remove('btn-stop');
+
+    btnPretrain.disabled = false;
+    btnPretrain.textContent = '1. Pre-train NeRF (50 Steps)';
+    btnSeed.disabled = true;
+    btnSeed.textContent = '2. Seed Gaussians from NeRF Edges';
 
     const numGaussians = parseInt(numGaussiansInput.value) || 500;
     
@@ -175,6 +184,56 @@ function trainingLoop() {
     requestAnimationFrame(trainingLoop);
 }
 
+// Pre-train NeRF to capture coarse edges
+async function runNeRFPretraining() {
+    isTraining = false;
+    btnTrain.textContent = 'Start Training';
+    btnTrain.classList.remove('btn-stop');
+    
+    btnPretrain.disabled = true;
+    btnPretrain.textContent = 'Training NeRF...';
+    
+    const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
+    
+    // Train for 50 steps
+    for (let step = 1; step <= 50; step++) {
+        const lossN = session.step_nerf(lrNerf);
+        lossHistoryNerf.push(lossN);
+        labelLossNerf.textContent = `Loss: ${lossN.toFixed(5)}`;
+        
+        if (step % 5 === 0 || step === 50) {
+            renderModelOutput(canvasNerf, session.get_nerf_render());
+            drawLossChart();
+            // Yield to main thread to keep browser UI responsive
+            await new Promise(resolve => setTimeout(resolve, 10));
+        }
+    }
+    
+    btnPretrain.textContent = 'NeRF Pre-trained!';
+    btnPretrain.disabled = true;
+    
+    // Fetch and draw importance map to the Blend canvas so the user can see it!
+    const importanceData = session.get_nerf_importance_map();
+    // The importance map dimension is (width - 1) x (height - 1) = 127 x 127
+    renderGrayscaleOutput(canvasBlend, importanceData, width - 1, height - 1);
+    
+    btnSeed.disabled = false;
+}
+
+// Seed Gaussians proportional to NeRF's spatial gradient
+function seedGaussiansFromEdges() {
+    session.seed_from_nerf();
+    // Render the initial state of the seeded Gaussians (should align to edges!)
+    renderModelOutput(canvasGaussian, session.get_gaussian_render());
+    btnSeed.textContent = 'Gaussians Seeded!';
+    btnSeed.disabled = true;
+
+    // Reset loss histories for fresh chart tracking
+    lossHistoryGaussian = [];
+    lossHistoryNerf = [];
+    drawLossChart();
+}
+
 // Render raw RGB data from Rust onto Web Canvas
 function renderModelOutput(canvas, rgbData) {
     const ctx = canvas.getContext('2d');
@@ -188,6 +247,24 @@ function renderModelOutput(canvas, rgbData) {
         imgData.data[i + 3] = 255;               // A
     }
     ctx.putImageData(imgData, 0, 0);
+}
+
+// Render grayscale importance/edge data onto Web Canvas
+function renderGrayscaleOutput(canvas, rgbData, w, h) {
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const imgData = ctx.createImageData(w, h);
+    
+    let srcIdx = 0;
+    for (let i = 0; i < imgData.data.length; i += 4) {
+        imgData.data[i] = rgbData[srcIdx++];     // R
+        imgData.data[i + 1] = rgbData[srcIdx++]; // G
+        imgData.data[i + 2] = rgbData[srcIdx++]; // B
+        imgData.data[i + 3] = 255;               // A
+    }
+    // Draw centered
+    ctx.putImageData(imgData, (canvas.width - w) / 2, (canvas.height - h) / 2);
 }
 
 // Update the blended/cross-fade viewer canvas

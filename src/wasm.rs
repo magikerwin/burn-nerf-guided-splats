@@ -102,6 +102,33 @@ impl WasmTrainingSession {
         }
         rgb
     }
+
+    pub fn seed_from_nerf(&mut self) {
+        let nerf_render = self.nerf_model.render(self.width, self.height);
+        let importance = crate::hybrid::compute_importance_map(nerf_render);
+        let num_gaussians = self.gaussian_model.num_gaussians;
+        let seeded_model = crate::hybrid::seed_gaussians_from_importance(
+            importance,
+            num_gaussians,
+            &self.device,
+        );
+        self.gaussian_model = seeded_model;
+        self.gaussian_optim = AdamConfig::new().init();
+    }
+
+    pub fn get_nerf_importance_map(&self) -> Vec<u8> {
+        let nerf_render = self.nerf_model.render(self.width, self.height);
+        let importance = crate::hybrid::compute_importance_map(nerf_render);
+        let data = importance.into_data().into_vec::<f32>().expect("Failed to get tensor data");
+        let mut rgb = Vec::with_capacity(data.len() * 3);
+        for &val in data.iter() {
+            let v = (val.clamp(0.0, 1.0) * 255.0).round() as u8;
+            rgb.push(v);
+            rgb.push(v);
+            rgb.push(v);
+        }
+        rgb
+    }
 }
 
 #[wasm_bindgen]

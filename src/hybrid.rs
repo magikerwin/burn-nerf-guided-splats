@@ -25,6 +25,74 @@ pub fn compute_importance_map<B: Backend>(image: Tensor<B, 3>) -> Tensor<B, 3> {
     mag_sq.sum_dim(2).sqrt()
 }
 
+use rand::Rng;
+use crate::model::gaussian::GaussianModel;
+
+/// Seeds Gaussian model means by sampling coordinates proportional to the importance map.
+pub fn seed_gaussians_from_importance<B: Backend>(
+    importance_map: Tensor<B, 3>,
+    num_gaussians: usize,
+    device: &B::Device,
+) -> GaussianModel<B> {
+    let shape = importance_map.shape();
+    let dims = shape.dims::<3>();
+    let h = dims[0];
+    let w = dims[1];
+
+    let mag = importance_map.into_data().into_vec::<f32>().expect("Failed to get importance map data");
+    
+    // Compute sum for normalization
+    let sum: f32 = mag.iter().sum();
+    
+    let mut rng = rand::thread_rng();
+    let mut sampled_means = Vec::with_capacity(num_gaussians * 2);
+
+    if sum < 1e-5 {
+        // If importance map is uniform/empty, fallback to random uniform seeding
+        for _ in 0..num_gaussians {
+            sampled_means.push(rng.r#gen::<f32>());
+            sampled_means.push(rng.r#gen::<f32>());
+        }
+    } else {
+        // Compute cumulative distribution function (CDF)
+        let mut cdf = Vec::with_capacity(mag.len());
+        let mut cumulative = 0.0;
+        for &val in mag.iter() {
+            cumulative += val / sum;
+            cdf.push(cumulative);
+        }
+
+        for _ in 0..num_gaussians {
+            let r: f32 = rng.r#gen();
+            // Binary search to find the pixel index
+            let idx = match cdf.binary_search_by(|val| val.partial_cmp(&r).unwrap()) {
+                Ok(index) => index,
+                Err(index) => index.min(cdf.len() - 1),
+            };
+
+            // Map flat index to 2D pixel coordinates (row, col) normalized to [0.0, 1.0]
+            let row = idx / w;
+            let col = idx % w;
+
+            let y = (row as f32 + 0.5) / (h as f32);
+            let x = (col as f32 + 0.5) / (w as f32);
+
+            sampled_means.push(x);
+            sampled_means.push(y);
+        }
+    }
+
+    // Create a new Gaussian model and overwrite its means parameter
+    let mut model = GaussianModel::<B>::new(num_gaussians, device);
+    
+    // Construct means tensor of shape [N, 2]
+    let means_data = burn::tensor::TensorData::new(sampled_means, [num_gaussians, 2]);
+    let means_tensor = Tensor::<B, 2>::from_data(means_data, device);
+    model.means = burn::module::Param::from_tensor(means_tensor);
+
+    model
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -48,11 +116,33 @@ mod tests {
         
         // Check that the middle column (index 1) has high gradient magnitude due to the transition from 0 to 1
         let vec = importance.into_data().into_vec::<f32>().unwrap();
-        // Since H=3, W=3:
-        // row 0: [0, 1, 0]
-        // row 1: [0, 1, 0]
-        // row 2: [0, 1, 0]
         assert!(vec[1] > 0.9);
         assert!(vec[0] < 0.1);
+    }
+
+    #[test]
+    fn test_seed_gaussians_from_importance() {
+        let device = Default::default();
+        // Create a simple 2x2 gradient map where only the bottom-right pixel has a gradient
+        let importance_data = vec![
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        ];
+        let importance_tensor = Tensor::<Flex, 3>::from_data(TensorData::new(importance_data, [2, 2, 1]), &device);
+        
+        // Seed 100 Gaussians. They should all be placed in the bottom-right pixel (index 3).
+        // Coordinates for index 3: row = 1, col = 1 -> y = 1.5/2 = 0.75, x = 1.5/2 = 0.75
+        let model = seed_gaussians_from_importance(importance_tensor, 100, &device);
+        assert_eq!(model.num_gaussians, 100);
+
+        let means = model.means.val().into_data().into_vec::<f32>().unwrap();
+        for i in 0..100 {
+            let x = means[i * 2];
+            let y = means[i * 2 + 1];
+            assert!((x - 0.75).abs() < 1e-4);
+            assert!((y - 0.75).abs() < 1e-4);
+        }
     }
 }
