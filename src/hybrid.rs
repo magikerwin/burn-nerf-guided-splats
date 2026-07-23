@@ -28,62 +28,112 @@ pub fn compute_importance_map<B: Backend>(image: Tensor<B, 3>) -> Tensor<B, 3> {
 use rand::Rng;
 use crate::model::gaussian::GaussianModel;
 
-/// Seeds Gaussian model means by sampling coordinates proportional to the importance map.
+/// Educational Hybrid Seeding Function:
+/// Bridge between Implicit (NeRF) continuous representations and Explicit (Gaussian Splats) primitive parameters.
+///
+/// ### Hybrid Seeding Rationale:
+/// 1. **70% Edge Importance Sampling:** High-frequency spatial gradients extracted from NeRF indicate
+///    object boundaries and complex textures. Concentrating 70% of splats here accelerates convergence.
+/// 2. **30% Uniform Background Filling:** If 100% of splats are placed on edges, flat background areas receive
+///    zero splats, leaving unassigned black gaps and inflating overall MSE loss.
+/// 3. **Color & Scale Transfer:**
+///    - **Colors:** Extracted from NeRF predictions at $(x, y)$ and transformed into pre-sigmoid logits via
+///      $\text{logit}(p) = \ln\left(\frac{p}{1 - p}\right)$.
+///    - **Scales:** Edge splats are assigned tighter variance ($\text{scale} = e^{-3.0} \approx 0.05$) to model fine details,
+///      while background splats receive broader variance ($\text{scale} = e^{-2.0} \approx 0.135$) for smooth coverage.
 pub fn seed_gaussians_from_importance<B: Backend>(
     importance_data: &[f32],
+    nerf_render_rgb: &[f32], // [H * W * 3] float vector in [0, 1]
     h: usize,
     w: usize,
     num_gaussians: usize,
     device: &B::Device,
 ) -> GaussianModel<B> {
-    // Compute sum for normalization
     let sum: f32 = importance_data.iter().sum();
-    
     let mut rng = rand::thread_rng();
+    
     let mut sampled_means = Vec::with_capacity(num_gaussians * 2);
+    let mut sampled_colors = Vec::with_capacity(num_gaussians * 3);
+    let mut sampled_scales = Vec::with_capacity(num_gaussians * 2);
 
-    if sum < 1e-5 {
-        // If importance map is uniform/empty, fallback to random uniform seeding
-        for _ in 0..num_gaussians {
-            sampled_means.push(rng.r#gen::<f32>());
-            sampled_means.push(rng.r#gen::<f32>());
-        }
-    } else {
-        // Compute cumulative distribution function (CDF)
-        let mut cdf = Vec::with_capacity(importance_data.len());
+    let use_cdf = sum >= 1e-5;
+    let cdf = if use_cdf {
+        let mut cdf_vec = Vec::with_capacity(importance_data.len());
         let mut cumulative = 0.0;
         for &val in importance_data.iter() {
             cumulative += val / sum;
-            cdf.push(cumulative);
+            cdf_vec.push(cumulative);
         }
+        cdf_vec
+    } else {
+        Vec::new()
+    };
 
-        for _ in 0..num_gaussians {
+    // 70% importance sampled from NeRF edges, 30% uniform background filling
+    let num_edge = if use_cdf { (num_gaussians as f32 * 0.70) as usize } else { 0 };
+
+    for i in 0..num_gaussians {
+        let (row, col, x, y) = if i < num_edge {
+            // Edge-guided CDF sampling
             let r: f32 = rng.r#gen();
-            // Binary search to find the pixel index
             let idx = match cdf.binary_search_by(|val| val.partial_cmp(&r).unwrap()) {
                 Ok(index) => index,
                 Err(index) => index.min(cdf.len() - 1),
             };
-
-            // Map flat index to 2D pixel coordinates (row, col) normalized to [0.0, 1.0]
             let row = idx / w;
             let col = idx % w;
-
             let y = (row as f32 + 0.5) / (h as f32);
             let x = (col as f32 + 0.5) / (w as f32);
+            (row, col, x, y)
+        } else {
+            // Uniform background coverage sampling
+            let x: f32 = rng.r#gen();
+            let y: f32 = rng.r#gen();
+            let row = ((y * h as f32).floor() as usize).min(h - 1);
+            let col = ((x * w as f32).floor() as usize).min(w - 1);
+            (row, col, x, y)
+        };
 
-            sampled_means.push(x);
-            sampled_means.push(y);
+        sampled_means.push(x);
+        sampled_means.push(y);
+
+        // Extract RGB color at pixel coordinate from NeRF rendered image
+        let pix_idx = (row * w + col) * 3;
+        let r_val = nerf_render_rgb.get(pix_idx).copied().unwrap_or(0.5);
+        let g_val = nerf_render_rgb.get(pix_idx + 1).copied().unwrap_or(0.5);
+        let b_val = nerf_render_rgb.get(pix_idx + 2).copied().unwrap_or(0.5);
+
+        // Inverse sigmoid logit transformation for pre-sigmoid colors: logit(p) = ln(p / (1 - p))
+        // Ensures that when Gaussian model renders sigmoid(logit), it reproduces NeRF's RGB color.
+        let logit = |p: f32| {
+            let p_clamped = p.clamp(0.01, 0.99);
+            (p_clamped / (1.0 - p_clamped)).ln()
+        };
+
+        sampled_colors.push(logit(r_val));
+        sampled_colors.push(logit(g_val));
+        sampled_colors.push(logit(b_val));
+
+        // Sample initial scales: edge splats get smaller scale (-3.0), background splats get wider scale (-2.0)
+        if i < num_edge {
+            sampled_scales.push(-3.0);
+            sampled_scales.push(-3.0);
+        } else {
+            sampled_scales.push(-2.0);
+            sampled_scales.push(-2.0);
         }
     }
 
-    // Create a new Gaussian model and overwrite its means parameter
     let mut model = GaussianModel::<B>::new(num_gaussians, device);
-    
-    // Construct means tensor of shape [N, 2]
-    let means_data = burn::tensor::TensorData::new(sampled_means, [num_gaussians, 2]);
-    let means_tensor = Tensor::<B, 2>::from_data(means_data, device);
+
+    // Overwrite parameters with sampled initial values
+    let means_tensor = Tensor::<B, 2>::from_data(burn::tensor::TensorData::new(sampled_means, [num_gaussians, 2]), device);
+    let colors_tensor = Tensor::<B, 2>::from_data(burn::tensor::TensorData::new(sampled_colors, [num_gaussians, 3]), device);
+    let scales_tensor = Tensor::<B, 2>::from_data(burn::tensor::TensorData::new(sampled_scales, [num_gaussians, 2]), device);
+
     model.means = burn::module::Param::from_tensor(means_tensor);
+    model.colors = burn::module::Param::from_tensor(colors_tensor);
+    model.scales = burn::module::Param::from_tensor(scales_tensor);
 
     model
 }
@@ -126,17 +176,28 @@ mod tests {
             1.0,
         ];
         
-        // Seed 100 Gaussians. They should all be placed in the bottom-right pixel (index 3).
-        // Coordinates for index 3: row = 1, col = 1 -> y = 1.5/2 = 0.75, x = 1.5/2 = 0.75
-        let model = seed_gaussians_from_importance::<Flex>(&importance_data, 2, 2, 100, &device);
+        let nerf_render_rgb = vec![
+            0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0,
+            1.0, 0.0, 0.0,
+        ];
+        let model = seed_gaussians_from_importance::<Flex>(&importance_data, &nerf_render_rgb, 2, 2, 100, &device);
         assert_eq!(model.num_gaussians, 100);
 
         let means = model.means.val().into_data().into_vec::<f32>().unwrap();
-        for i in 0..100 {
+        let colors = model.colors.val().into_data().into_vec::<f32>().unwrap();
+
+        // The first 70 Gaussians are edge-sampled (index 3: bottom-right, x=0.75, y=0.75)
+        for i in 0..70 {
             let x = means[i * 2];
             let y = means[i * 2 + 1];
             assert!((x - 0.75).abs() < 1e-4);
             assert!((y - 0.75).abs() < 1e-4);
+
+            // Red channel pre-sigmoid logit of 1.0 (clamped to 0.99) should be positive
+            let r_logit = colors[i * 3];
+            assert!(r_logit > 0.0);
         }
     }
 }

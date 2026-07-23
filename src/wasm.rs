@@ -104,7 +104,7 @@ impl WasmTrainingSession {
 
     pub async fn seed_from_nerf(&mut self) {
         let nerf_render = self.nerf_model.render(self.width, self.height);
-        let importance_tensor = crate::hybrid::compute_importance_map(nerf_render);
+        let importance_tensor = crate::hybrid::compute_importance_map(nerf_render.clone());
         
         let dims = importance_tensor.shape().dims::<3>();
         let h = dims[0];
@@ -118,9 +118,18 @@ impl WasmTrainingSession {
             .into_vec::<f32>()
             .expect("Failed to get importance map data");
 
+        // Fetch NeRF render RGB values to CPU asynchronously
+        let nerf_render_vec = nerf_render
+            .into_data_async()
+            .await
+            .expect("Failed to read NeRF render data")
+            .into_vec::<f32>()
+            .expect("Failed to get NeRF render float data");
+
         let num_gaussians = self.gaussian_model.num_gaussians;
         let seeded_model = crate::hybrid::seed_gaussians_from_importance(
             &importance_vec,
+            &nerf_render_vec,
             h,
             w,
             num_gaussians,
