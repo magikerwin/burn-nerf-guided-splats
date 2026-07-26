@@ -414,8 +414,10 @@ async function handleViewSliderInput() {
 
     renderTargetViewBlend();
 
-    if (session) {
+    // While training, skip manual render — the training loop already renders at currentViewV each step
+    if (session && !isTraining) {
         await gpuQueue.run(async () => {
+            if (!session) return;
             const rgbG = await session.get_gaussian_render_view(currentViewV);
             const rgbN = await session.get_nerf_render_view(currentViewV);
             renderModelOutput(canvasGaussian, rgbG);
@@ -451,7 +453,21 @@ async function autoPlayOrbitLoop() {
     }
 
     viewSlider.value = currentViewV;
-    await handleViewSliderInput();
+    const numFrames = targetFrames.length || 2;
+    viewAngleText.textContent = `v = ${currentViewV.toFixed(2)} (${numFrames} Keyframes)`;
+    renderTargetViewBlend();
+
+    // While training, skip queued render — the training loop renders at currentViewV each step
+    if (session && !isTraining) {
+        await gpuQueue.run(async () => {
+            if (!session) return;
+            const rgbG = await session.get_gaussian_render_view(currentViewV);
+            const rgbN = await session.get_nerf_render_view(currentViewV);
+            renderModelOutput(canvasGaussian, rgbG);
+            renderModelOutput(canvasNerf, rgbN);
+            updateBlendCanvas();
+        });
+    }
 
     if (isAutoPlaying) {
         setTimeout(() => requestAnimationFrame(autoPlayOrbitLoop), 25);
