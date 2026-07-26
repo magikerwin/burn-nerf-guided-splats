@@ -442,7 +442,7 @@ async function autoPlayOrbitLoop() {
 }
 
 // Reset models and clear graphs
-function resetSession() {
+async function resetSession() {
     isTraining = false;
     btnTrain.textContent = '▶ Start Multi-View Fitting';
     btnTrain.classList.remove('btn-stop');
@@ -459,6 +459,8 @@ function resetSession() {
     const numGaussians = parseInt(numGaussiansInput.value) || 500;
     const numFrames = targetFrames.length;
 
+    if (numFrames === 0) return;
+
     // Concatenate all target frames into single Uint8Array
     const frameLen = width * height * 3;
     const flatConcat = new Uint8Array(numFrames * frameLen);
@@ -466,14 +468,15 @@ function resetSession() {
         flatConcat.set(targetFrames[f], f * frameLen);
     }
 
-    // Create new multi-frame WASM session at current grid resolution (64x64 or 128x128)
-    session = create_multiframe_session(width, height, numGaussians, flatConcat, numFrames);
-    console.log(`[System] Initialized Multi-Frame session at ${width}x${height} grid with ${numGaussians} 3D Gaussians across ${numFrames} keyframe views.`);
+    // Serialize new WASM session creation through gpuQueue to let previous WGPU buffers unmap cleanly
+    await gpuQueue.run(async () => {
+        session = create_multiframe_session(width, height, numGaussians, flatConcat, numFrames);
+        console.log(`[System] Initialized Multi-Frame session at ${width}x${height} grid with ${numGaussians} 3D Gaussians across ${numFrames} keyframe views.`);
+    });
 
     lossHistoryGaussian = [];
     lossHistoryNerf = [];
     stepCounter = 0;
-
     
     // Clear views
     clearCanvas(canvasGaussian);
@@ -484,6 +487,7 @@ function resetSession() {
     labelLossGaussian.textContent = 'Loss: --';
     labelLossNerf.textContent = 'Loss: --';
 }
+
 
 function clearCanvas(canvas) {
     if (!canvas) return;
