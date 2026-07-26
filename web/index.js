@@ -542,20 +542,23 @@ async function toggleTraining() {
             btnTrain.disabled = true;
             btnTrain.textContent = '⏳ NeRF Guided Seeding...';
             const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
-            console.log("[Pipeline] 🎓 NeRF-Guided Seeding: Pre-training Implicit NeRF for 50 steps...");
+            console.log("[Pipeline] 🎓 NeRF-Guided Seeding: Pre-training Implicit NeRF for 200 steps...");
 
-            for (let i = 1; i <= 50; i++) {
+            for (let i = 1; i <= 200; i++) {
                 session.step_nerf_fast(lrNerf);
-                if (i % 10 === 0) {
+                if (i % 25 === 0) {
                     await gpuQueue.run(async () => {
                         const losses = await session.get_losses();
                         labelLossNerf.textContent = `Loss: ${losses[1].toFixed(5)}`;
                         const rgbN = await session.get_nerf_render_view(currentViewV);
                         renderModelOutput(canvasNerf, rgbN);
+                        drawLossChart();
                     });
+                    console.log(`[Pipeline] 🎓 NeRF pre-training: Step ${i}/200...`);
                 }
-                await new Promise(resolve => setTimeout(resolve, 2));
+                await new Promise(resolve => setTimeout(resolve, 1));
             }
+
 
             console.log("[Pipeline] 🎓 NeRF-Guided Seeding: Seeding 3D Gaussians along NeRF spatial gradients...");
             await gpuQueue.run(async () => {
