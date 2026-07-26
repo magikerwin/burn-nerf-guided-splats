@@ -50,6 +50,11 @@ body.y2k-light-theme {
     gap: 1.25rem;
 }
 
+.hidden {
+    display: none !important;
+}
+
+
 /* Header */
 .main-header {
     display: flex;
