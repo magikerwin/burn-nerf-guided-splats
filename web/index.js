@@ -767,11 +767,11 @@ function drawLossChart() {
     const w = canvasChart.width;
     const h = canvasChart.height;
 
-    ctx.fillStyle = '#0f172a';
+    ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, w, h);
 
     if (lossHistoryGaussian.length === 0 && lossHistoryNerf.length === 0) {
-        ctx.fillStyle = '#64748b';
+        ctx.fillStyle = '#6b21a8';
         ctx.font = '11px sans-serif';
         ctx.fillText('Loss history chart will plot here...', 20, h / 2);
         return;
@@ -781,7 +781,7 @@ function drawLossChart() {
         if (history.length < 2) return;
         const maxLoss = Math.max(0.1, ...history.slice(0, 50));
         ctx.strokeStyle = color;
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 2.0;
         ctx.beginPath();
 
         for (let i = 0; i < history.length; i++) {
@@ -793,9 +793,10 @@ function drawLossChart() {
         ctx.stroke();
     };
 
-    drawLine(lossHistoryGaussian, '#f97316');
-    drawLine(lossHistoryNerf, '#8b5cf6');
+    drawLine(lossHistoryGaussian, '#ec4899'); // Y2K Pink for GS
+    drawLine(lossHistoryNerf, '#9333ea');     // Y2K Purple for NeRF
 }
+
 
 start().catch(err => {
     console.error("[Initialization Error] Failed to start WASM/WebGPU session:", err);
