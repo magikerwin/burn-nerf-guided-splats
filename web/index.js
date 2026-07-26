@@ -1,4 +1,4 @@
-import init, { WasmTrainingSession, init_panic_hook, init_webgpu } from './pkg/burn_nerf_guided_splats.js';
+import init, { WasmTrainingSession, create_multiframe_session, init_panic_hook, init_webgpu } from './pkg/burn_nerf_guided_splats.js';
 
 // Redirect Console output to HTML developer console
 const developerConsole = document.getElementById('developer-console');
@@ -33,20 +33,23 @@ console.error = function(...args) {
 
 let session = null;
 let isTraining = false;
-let width = 128;
-let height = 128;
-let targetRgb0 = new Uint8Array(width * height * 3);
-let targetRgb1 = new Uint8Array(width * height * 3);
-let currentViewV = 0.5; // View interpolation parameter in [0.0, 1.0]
+let isAutoPlaying = false;
+let autoPlayDirection = 1;
+
+let width = 64;  // Default low-resolution 64x64 for fast responsiveness
+let height = 64;
+
+let targetFrames = []; // Array of Uint8Arrays representing RGB frames
+let currentViewV = 0.5; // Relative view parameter in [0.0, 1.0]
 
 let lossHistoryGaussian = [];
 let lossHistoryNerf = [];
 
 // DOM Elements
+const resolutionSelect = document.getElementById('resolution-select');
 const selectImg = document.getElementById('image-select');
 const customUploadContainer = document.getElementById('custom-upload-container');
-const uploadInput0 = document.getElementById('image-upload-0');
-const uploadInput1 = document.getElementById('image-upload-1');
+const uploadInputMulti = document.getElementById('image-upload-multi');
 
 const numGaussiansInput = document.getElementById('num-gaussians');
 const lrGaussianInput = document.getElementById('lr-gaussian');
@@ -56,8 +59,11 @@ const btnReset = document.getElementById('btn-reset');
 const btnPretrain = document.getElementById('btn-nerf-pretrain');
 const btnSeed = document.getElementById('btn-seed');
 
+const btnAutoPlay = document.getElementById('btn-autoplay');
 const viewSlider = document.getElementById('view-slider');
 const viewAngleText = document.getElementById('view-angle-text');
+const labelViewStart = document.getElementById('label-view-start');
+const labelViewEnd = document.getElementById('label-view-end');
 
 const canvasTarget = document.getElementById('canvas-target');
 const canvasGaussian = document.getElementById('canvas-gaussian');
@@ -83,46 +89,76 @@ async function start() {
     // Initialize WebGPU context asynchronously first
     await init_webgpu();
     
+    updateCanvasDimensions();
+
     // Set up default synthetic target views
     generateSyntheticTargets();
     resetSession();
     
     // Wire up events
+    resolutionSelect.addEventListener('change', handleResolutionChange);
     selectImg.addEventListener('change', handleImageSelect);
-    if (uploadInput0) uploadInput0.addEventListener('change', () => handleCustomUpload(0));
-    if (uploadInput1) uploadInput1.addEventListener('change', () => handleCustomUpload(1));
+    if (uploadInputMulti) uploadInputMulti.addEventListener('change', handleMultiPhotoUpload);
 
     btnTrain.addEventListener('click', toggleTraining);
     btnReset.addEventListener('click', resetSession);
+    btnAutoPlay.addEventListener('click', toggleAutoPlay);
     viewSlider.addEventListener('input', handleViewSliderInput);
     blendSlider.addEventListener('input', updateBlendCanvas);
     btnPretrain.addEventListener('click', runNeRFPretraining);
     btnSeed.addEventListener('click', seedGaussiansFromEdges);
 }
 
-// Generate default synthetic targets: View 0 (Circle at 0°) and View 1 (Rotated/Displaced at 30°)
+// Update canvas DOM sizes
+function updateCanvasDimensions() {
+    const res = parseInt(resolutionSelect.value) || 64;
+    width = res;
+    height = res;
+
+    canvasTarget.width = width;
+    canvasTarget.height = height;
+    canvasGaussian.width = width;
+    canvasGaussian.height = height;
+    canvasNerf.width = width;
+    canvasNerf.height = height;
+    canvasBlend.width = width;
+    canvasBlend.height = height;
+}
+
+// Handle render grid resolution dropdown change
+function handleResolutionChange() {
+    updateCanvasDimensions();
+    generateSyntheticTargets();
+    resetSession();
+}
+
+// Generate default synthetic target frames (View 0 circle vs View 1 skewed circle)
 function generateSyntheticTargets() {
-    // View 0 (0 deg): Red circle in center
+    targetFrames = [];
+
+    // Frame 1 (0°): Red circle in center
     const canvas0 = document.createElement('canvas');
     canvas0.width = width;
     canvas0.height = height;
     const ctx0 = canvas0.getContext('2d');
-    ctx0.fillStyle = '#000080'; // Dark Blue background
+    ctx0.fillStyle = '#000080';
     ctx0.fillRect(0, 0, width, height);
     ctx0.beginPath();
     ctx0.arc(width * 0.5, height * 0.5, width * 0.35, 0, 2 * Math.PI);
-    ctx0.fillStyle = '#ff0000'; // Red
+    ctx0.fillStyle = '#ff0000';
     ctx0.fill();
 
     const imgData0 = ctx0.getImageData(0, 0, width, height);
+    const frame0 = new Uint8Array(width * height * 3);
     let idx = 0;
     for (let i = 0; i < imgData0.data.length; i += 4) {
-        targetRgb0[idx++] = imgData0.data[i];
-        targetRgb0[idx++] = imgData0.data[i + 1];
-        targetRgb0[idx++] = imgData0.data[i + 2];
+        frame0[idx++] = imgData0.data[i];
+        frame0[idx++] = imgData0.data[i + 1];
+        frame0[idx++] = imgData0.data[i + 2];
     }
+    targetFrames.push(frame0);
 
-    // View 1 (30 deg): Skewed/Shifted Red circle (simulating 30 degree rotated camera view)
+    // Frame 2 (30°): Shifted/Rotated circle
     const canvas1 = document.createElement('canvas');
     canvas1.width = width;
     canvas1.height = height;
@@ -135,12 +171,17 @@ function generateSyntheticTargets() {
     ctx1.fill();
 
     const imgData1 = ctx1.getImageData(0, 0, width, height);
+    const frame1 = new Uint8Array(width * height * 3);
     idx = 0;
     for (let i = 0; i < imgData1.data.length; i += 4) {
-        targetRgb1[idx++] = imgData1.data[i];
-        targetRgb1[idx++] = imgData1.data[i + 1];
-        targetRgb1[idx++] = imgData1.data[i + 2];
+        frame1[idx++] = imgData1.data[i];
+        frame1[idx++] = imgData1.data[i + 1];
+        frame1[idx++] = imgData1.data[i + 2];
     }
+    targetFrames.push(frame1);
+
+    if (labelViewStart) labelViewStart.textContent = 'Photo 1 (0°)';
+    if (labelViewEnd) labelViewEnd.textContent = 'Photo 2 (30°)';
 
     renderTargetViewBlend();
 }
@@ -149,18 +190,78 @@ function generateSyntheticTargets() {
 function renderTargetViewBlend() {
     const ctx = canvasTarget.getContext('2d');
     const imgData = ctx.createImageData(width, height);
-    const v = currentViewV;
+    const numFrames = targetFrames.len || targetFrames.length;
+
+    if (numFrames === 0) return;
+
+    let f0 = 0;
+    let f1 = 0;
+    let weight = 0;
+
+    if (numFrames === 1) {
+        f0 = 0;
+        f1 = 0;
+        weight = 0;
+    } else {
+        const scaled = currentViewV * (numFrames - 1);
+        f0 = Math.floor(scaled);
+        f1 = Math.min(f0 + 1, numFrames - 1);
+        weight = scaled - f0;
+    }
+
+    const buf0 = targetFrames[f0];
+    const buf1 = targetFrames[f1];
 
     let srcIdx = 0;
     for (let i = 0; i < imgData.data.length; i += 4) {
-        imgData.data[i] = (1 - v) * targetRgb0[srcIdx] + v * targetRgb1[srcIdx];
-        imgData.data[i + 1] = (1 - v) * targetRgb0[srcIdx + 1] + v * targetRgb1[srcIdx + 1];
-        imgData.data[i + 2] = (1 - v) * targetRgb0[srcIdx + 2] + v * targetRgb1[srcIdx + 2];
+        imgData.data[i] = (1 - weight) * buf0[srcIdx] + weight * buf1[srcIdx];
+        imgData.data[i + 1] = (1 - weight) * buf0[srcIdx + 1] + weight * buf1[srcIdx + 1];
+        imgData.data[i + 2] = (1 - weight) * buf0[srcIdx + 2] + weight * buf1[srcIdx + 2];
         imgData.data[i + 3] = 255;
         srcIdx += 3;
     }
     ctx.putImageData(imgData, 0, 0);
 }
+
+// Handle multi-photo file upload (Photo 1, Photo 2, Photo 3, Photo 4...)
+function handleMultiPhotoUpload(e) {
+    const files = Array.from(e.target.files);
+    if (!files || files.length === 0) return;
+
+    targetFrames = [];
+    let loadedCount = 0;
+
+    files.forEach((file, index) => {
+        const img = new Image();
+        img.onload = () => {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = width;
+            tempCanvas.height = height;
+            const ctx = tempCanvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            const imgData = ctx.getImageData(0, 0, width, height);
+            const frameBuf = new Uint8Array(width * height * 3);
+            let idx = 0;
+            for (let i = 0; i < imgData.data.length; i += 4) {
+                frameBuf[idx++] = imgData.data[i];
+                frameBuf[idx++] = imgData.data[i + 1];
+                frameBuf[idx++] = imgData.data[i + 2];
+            }
+            targetFrames[index] = frameBuf;
+            loadedCount++;
+
+            if (loadedCount === files.length) {
+                if (labelViewStart) labelViewStart.textContent = `Photo 1`;
+                if (labelViewEnd) labelViewEnd.textContent = `Photo ${files.length}`;
+                renderTargetViewBlend();
+                resetSession();
+            }
+        };
+        img.src = URL.createObjectURL(file);
+    });
+}
+
 
 // Handle image selection dropdown
 function handleImageSelect() {
@@ -204,8 +305,8 @@ function handleCustomUpload(viewIndex) {
 // Handle view interpolation slider movement
 async function handleViewSliderInput() {
     currentViewV = parseFloat(viewSlider.value);
-    const angleDeg = (currentViewV * 30).toFixed(0);
-    viewAngleText.textContent = `Angle: ${angleDeg}° (v = ${currentViewV.toFixed(2)})`;
+    const numFrames = targetFrames.length || 2;
+    viewAngleText.textContent = `Photo Trajectory v = ${currentViewV.toFixed(2)} (${numFrames} Keyframes)`;
 
     renderTargetViewBlend();
 
@@ -213,6 +314,39 @@ async function handleViewSliderInput() {
         renderModelOutput(canvasGaussian, await session.get_gaussian_render_view(currentViewV));
         renderModelOutput(canvasNerf, await session.get_nerf_render_view(currentViewV));
         updateBlendCanvas();
+    }
+}
+
+// Toggle hands-free 3D Orbit Turntable Animation
+function toggleAutoPlay() {
+    if (isAutoPlaying) {
+        isAutoPlaying = false;
+        if (btnAutoPlay) btnAutoPlay.textContent = '▶ Auto-Play 3D Orbit';
+    } else {
+        isAutoPlaying = true;
+        if (btnAutoPlay) btnAutoPlay.textContent = '⏸ Pause Orbit';
+        requestAnimationFrame(autoPlayOrbitLoop);
+    }
+}
+
+// Continuous 3D Orbit sweep loop
+async function autoPlayOrbitLoop() {
+    if (!isAutoPlaying) return;
+
+    currentViewV += autoPlayDirection * 0.008;
+    if (currentViewV >= 1.0) {
+        currentViewV = 1.0;
+        autoPlayDirection = -1;
+    } else if (currentViewV <= 0.0) {
+        currentViewV = 0.0;
+        autoPlayDirection = 1;
+    }
+
+    viewSlider.value = currentViewV;
+    await handleViewSliderInput();
+
+    if (isAutoPlaying) {
+        setTimeout(() => requestAnimationFrame(autoPlayOrbitLoop), 25);
     }
 }
 
@@ -234,10 +368,18 @@ function resetSession() {
     step2Status.textContent = '⚪';
 
     const numGaussians = parseInt(numGaussiansInput.value) || 500;
-    
-    // Create new multi-view session in Rust WASM
-    session = new WasmTrainingSession(width, height, numGaussians, targetRgb0, targetRgb1);
-    console.log(`[System] Initialized new Multi-View session with ${numGaussians} 3D Gaussians.`);
+    const numFrames = targetFrames.length;
+
+    // Concatenate all target frames into single Uint8Array
+    const frameLen = width * height * 3;
+    const flatConcat = new Uint8Array(numFrames * frameLen);
+    for (let f = 0; f < numFrames; f++) {
+        flatConcat.set(targetFrames[f], f * frameLen);
+    }
+
+    // Create new multi-frame WASM session at current grid resolution (64x64 or 128x128)
+    session = create_multiframe_session(width, height, numGaussians, flatConcat, numFrames);
+    console.log(`[System] Initialized Multi-Frame session at ${width}x${height} grid with ${numGaussians} 3D Gaussians across ${numFrames} keyframe views.`);
 
     lossHistoryGaussian = [];
     lossHistoryNerf = [];
@@ -257,6 +399,7 @@ function clearCanvas(canvas) {
     ctx.fillStyle = '#f1f5f9';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
+
 
 // Training toggle
 function toggleTraining() {

@@ -21,6 +21,43 @@ pub struct WasmTrainingSession {
     device: <B as burn::tensor::backend::BackendTypes>::Device,
 }
 
+fn create_multiframe_session_internal(
+    width: usize,
+    height: usize,
+    num_gaussians: usize,
+    rgb_slices: &[&[u8]],
+) -> WasmTrainingSession {
+    let device = Default::default();
+    let shape = [height, width, 3];
+    let mut target_tensors = Vec::with_capacity(rgb_slices.len());
+
+    for slice in rgb_slices {
+        let mut float_data = Vec::with_capacity(slice.len());
+        for &val in slice.iter() {
+            float_data.push(val as f32 / 255.0);
+        }
+        let tensor_data = TensorData::new(float_data, shape);
+        target_tensors.push(Tensor::<B, 3>::from_data(tensor_data, &device));
+    }
+
+    let gaussian_model = GaussianModel::<B>::new(num_gaussians, &device);
+    let gaussian_optim = AdamConfig::new().init();
+
+    let nerf_model = NerfModel::<B>::new(8, 64, &device);
+    let nerf_optim = AdamConfig::new().init();
+
+    WasmTrainingSession {
+        width,
+        height,
+        target_tensors,
+        gaussian_model,
+        gaussian_optim,
+        nerf_model,
+        nerf_optim,
+        device,
+    }
+}
+
 #[wasm_bindgen]
 impl WasmTrainingSession {
     #[wasm_bindgen(constructor)]
@@ -31,45 +68,9 @@ impl WasmTrainingSession {
         target_rgb_0: &[u8],
         target_rgb_1: &[u8],
     ) -> Self {
-        Self::new_multiframe(width, height, num_gaussians, &[target_rgb_0, target_rgb_1])
+        create_multiframe_session_internal(width, height, num_gaussians, &[target_rgb_0, target_rgb_1])
     }
 
-    pub fn new_multiframe(
-        width: usize,
-        height: usize,
-        num_gaussians: usize,
-        rgb_slices: &[&[u8]],
-    ) -> Self {
-        let device = Default::default();
-        let shape = [height, width, 3];
-        let mut target_tensors = Vec::with_capacity(rgb_slices.len());
-
-        for slice in rgb_slices {
-            let mut float_data = Vec::with_capacity(slice.len());
-            for &val in slice.iter() {
-                float_data.push(val as f32 / 255.0);
-            }
-            let tensor_data = TensorData::new(float_data, shape);
-            target_tensors.push(Tensor::<B, 3>::from_data(tensor_data, &device));
-        }
-
-        let gaussian_model = GaussianModel::<B>::new(num_gaussians, &device);
-        let gaussian_optim = AdamConfig::new().init();
-
-        let nerf_model = NerfModel::<B>::new(8, 64, &device);
-        let nerf_optim = AdamConfig::new().init();
-
-        Self {
-            width,
-            height,
-            target_tensors,
-            gaussian_model,
-            gaussian_optim,
-            nerf_model,
-            nerf_optim,
-            device,
-        }
-    }
 
     pub async fn step_gaussian(&mut self, lr: f64) -> f32 {
         let (updated_model, loss_tensor) = train_step_multiframe(
@@ -201,7 +202,8 @@ pub fn create_multiframe_session(
             slices.push(&flat_rgb_concatenated[start..end]);
         }
     }
-    WasmTrainingSession::new_multiframe(width, height, num_gaussians, &slices)
+    create_multiframe_session_internal(width, height, num_gaussians, &slices)
+
 }
 
 

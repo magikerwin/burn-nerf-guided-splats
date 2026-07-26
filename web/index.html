@@ -30,26 +30,35 @@
             <!-- Sidebar Controls -->
             <section class="card controls-card">
                 <h2>Configuration Panel</h2>
+
+                <div class="control-section">
+                    <h4>1. Performance & Resolution</h4>
+                    <div class="control-group">
+                        <label for="resolution-select">Render Grid Resolution</label>
+                        <select id="resolution-select">
+                            <option value="64" selected>64 x 64 (Fast & Responsive - Recommended)</option>
+                            <option value="128">128 x 128 (High Detail)</option>
+                        </select>
+                    </div>
+                </div>
                 
                 <div class="control-section">
-                    <h4>1. Multi-View Target Setup</h4>
+                    <h4>2. Multi-View Target Setup</h4>
                     <div class="control-group">
                         <label for="image-select">Target Image Views</label>
                         <select id="image-select">
                             <option value="synthetic">Synthetic Multi-View (Circle 0° & Ellipse 30°)</option>
-                            <option value="upload">Upload Custom Dual-View Pair...</option>
+                            <option value="upload">Upload Custom Photo Sequence (2 to 5 Photos)...</option>
                         </select>
                         <div id="custom-upload-container" class="hidden" style="margin-top:8px;">
-                            <label style="font-size: 0.8rem;">View 0 Image (0°):</label>
-                            <input type="file" id="image-upload-0" accept="image/*" style="margin-bottom: 6px;">
-                            <label style="font-size: 0.8rem;">View 1 Image (30°):</label>
-                            <input type="file" id="image-upload-1" accept="image/*">
+                            <label style="font-size: 0.8rem;">Select Photos (Photo 1, Photo 2, ...):</label>
+                            <input type="file" id="image-upload-multi" accept="image/*" multiple style="margin-top: 4px;">
                         </div>
                     </div>
                 </div>
 
                 <div class="control-section">
-                    <h4 class="orange-text">2. Explicit 3D Splats (GS)</h4>
+                    <h4 class="orange-text">3. Explicit 3D Splats (GS)</h4>
                     <div class="control-group">
                         <label for="num-gaussians">Num Gaussians ($N$)</label>
                         <input type="number" id="num-gaussians" min="10" max="2000" value="500">
@@ -61,7 +70,7 @@
                 </div>
 
                 <div class="control-section">
-                    <h4 class="purple-text">3. Implicit MLP (NeRF)</h4>
+                    <h4 class="purple-text">4. Implicit MLP (NeRF)</h4>
                     <div class="control-group">
                         <label for="lr-nerf">Optimizer Learning Rate</label>
                         <input type="number" id="lr-nerf" step="0.0001" min="0.0001" max="0.05" value="0.001">
@@ -101,7 +110,7 @@
                 </div>
 
                 <div class="info-tip-box">
-                    <strong>💡 Why Multi-View NeRF-Guided GS?</strong> Pre-training NeRF on both viewpoints captures continuous geometry and spatial gradients across camera angles, seeding 3D Gaussians accurately to eliminate floaters and render clean in-between view frames!
+                    <strong>💡 Why 64x64 Low-Res Optimization?</strong> Evaluating $64 \times 64$ grid resolution runs $4\times$ faster than $128 \times 128$, eliminating GPU memory bottlenecks and providing smooth 60 FPS 3D camera orbit sweeps!
                 </div>
             </section>
 
@@ -110,24 +119,28 @@
                 <!-- Interactive Camera View Angle Interpolation Banner -->
                 <div class="card view-slider-card">
                     <div class="view-slider-header">
-                        <h3>🎬 Camera View Interpolation Demo (In-Between Frames)</h3>
-                        <span class="view-angle-badge" id="view-angle-text">Angle: 15° (v = 0.50)</span>
+                        <h3>🎬 3D Camera Orbit Interpolation (Turntable Sweep)</h3>
+                        <div style="display:flex; gap: 0.5rem; align-items:center;">
+                            <button id="btn-autoplay" class="btn secondary-btn" style="padding: 0.25rem 0.65rem; font-size: 0.75rem;">▶ Auto-Play 3D Orbit</button>
+                            <span class="view-angle-badge" id="view-angle-text">Photo 1 → Photo 2 (v = 0.50)</span>
+                        </div>
                     </div>
                     <div class="view-slider-wrapper">
-                        <span class="angle-label orange-text font-bold">View 0 (0°)</span>
-                        <input type="range" id="view-slider" min="0" max="1" step="0.01" value="0.5" class="view-range-input">
-                        <span class="angle-label purple-text font-bold">View 1 (30°)</span>
+                        <span class="angle-label orange-text font-bold" id="label-view-start">Start</span>
+                        <input type="range" id="view-slider" min="0" max="1" step="0.005" value="0.5" class="view-range-input">
+                        <span class="angle-label purple-text font-bold" id="label-view-end">End</span>
                     </div>
                 </div>
 
                 <div class="canvases-row">
                     <!-- Target Card -->
                     <div class="card canvas-card target">
-                        <h3>Ground Truth Blend</h3>
+                        <h3>Ground Truth Target</h3>
                         <div class="canvas-wrapper">
-                            <canvas id="canvas-target" width="128" height="128"></canvas>
+                            <canvas id="canvas-target" width="64" height="64"></canvas>
                         </div>
                     </div>
+
 
                     <!-- Gaussian Splat Card -->
                     <div class="card canvas-card gaussian">
