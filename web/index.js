@@ -114,6 +114,23 @@ const step3Status = document.getElementById('step-3-status');
 
 // Initialize WASM
 async function start() {
+    // Wire up events immediately on page load
+    if (resolutionSelect) resolutionSelect.addEventListener('change', handleResolutionChange);
+    if (selectImg) selectImg.addEventListener('change', handleImageSelect);
+    if (uploadInputMulti) uploadInputMulti.addEventListener('change', handleMultiPhotoUpload);
+
+    if (btnTrain) btnTrain.addEventListener('click', toggleTraining);
+    if (btnReset) btnReset.addEventListener('click', resetSession);
+    if (btnAutoPlay) btnAutoPlay.addEventListener('click', toggleAutoPlay);
+    if (btnOneClickHybrid) btnOneClickHybrid.addEventListener('click', runOneClickHybridPipeline);
+    if (viewSlider) viewSlider.addEventListener('input', handleViewSliderInput);
+    if (blendSlider) blendSlider.addEventListener('input', updateBlendCanvas);
+    if (btnPretrain) btnPretrain.addEventListener('click', runNeRFPretraining);
+    if (btnSeed) btnSeed.addEventListener('click', seedGaussiansFromEdges);
+
+    if (btnToggleAdvanced) btnToggleAdvanced.addEventListener('click', () => advancedDrawer.classList.toggle('hidden'));
+    if (btnCloseAdvanced) btnCloseAdvanced.addEventListener('click', () => advancedDrawer.classList.add('hidden'));
+
     await init();
     init_panic_hook();
     
@@ -125,24 +142,8 @@ async function start() {
     // Set up default synthetic target views
     generateSyntheticTargets();
     await resetSession();
-    
-    // Wire up events
-    resolutionSelect.addEventListener('change', handleResolutionChange);
-    selectImg.addEventListener('change', handleImageSelect);
-    if (uploadInputMulti) uploadInputMulti.addEventListener('change', handleMultiPhotoUpload);
-
-    btnTrain.addEventListener('click', toggleTraining);
-    btnReset.addEventListener('click', resetSession);
-    btnAutoPlay.addEventListener('click', toggleAutoPlay);
-    if (btnOneClickHybrid) btnOneClickHybrid.addEventListener('click', runOneClickHybridPipeline);
-    viewSlider.addEventListener('input', handleViewSliderInput);
-    if (blendSlider) blendSlider.addEventListener('input', updateBlendCanvas);
-    if (btnPretrain) btnPretrain.addEventListener('click', runNeRFPretraining);
-    if (btnSeed) btnSeed.addEventListener('click', seedGaussiansFromEdges);
-
-    if (btnToggleAdvanced) btnToggleAdvanced.addEventListener('click', () => advancedDrawer.classList.toggle('hidden'));
-    if (btnCloseAdvanced) btnCloseAdvanced.addEventListener('click', () => advancedDrawer.classList.add('hidden'));
 }
+
 
 
 

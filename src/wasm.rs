@@ -152,24 +152,7 @@ impl WasmTrainingSession {
     }
 
     pub async fn seed_from_nerf(&mut self) {
-        let nerf_render_0 = self.nerf_model.render_view(self.width, self.height, 0.0);
-        let nerf_render_1 = self.nerf_model.render_view(self.width, self.height, 1.0);
-
-        let imp_0 = crate::hybrid::compute_importance_map(nerf_render_0.clone());
-        let imp_1 = crate::hybrid::compute_importance_map(nerf_render_1.clone());
-        let importance_tensor = imp_0.add(imp_1).mul_scalar(0.5);
-        
-        let dims = importance_tensor.shape().dims::<3>();
-        let h = dims[0];
-        let w = dims[1];
-        
-        let importance_vec = importance_tensor
-            .into_data_async()
-            .await
-            .expect("Failed to read importance data")
-            .into_vec::<f32>()
-            .expect("Failed to get importance map data");
-
+        let nerf_render_0 = self.nerf_model.render_view(self.width, self.height, 0.5);
         let nerf_render_vec = nerf_render_0
             .into_data_async()
             .await
@@ -177,16 +160,43 @@ impl WasmTrainingSession {
             .into_vec::<f32>()
             .expect("Failed to get NeRF render float data");
 
+        let h = self.height;
+        let w = self.width;
+        let mut importance_data = Vec::with_capacity((h - 1) * (w - 1));
+
+        for r in 0..(h - 1) {
+            for c in 0..(w - 1) {
+                let idx_curr = (r * w + c) * 3;
+                let idx_right = (r * w + (c + 1)) * 3;
+                let idx_bottom = ((r + 1) * w + c) * 3;
+
+                let dx_r = nerf_render_vec[idx_right] - nerf_render_vec[idx_curr];
+                let dx_g = nerf_render_vec[idx_right + 1] - nerf_render_vec[idx_curr + 1];
+                let dx_b = nerf_render_vec[idx_right + 2] - nerf_render_vec[idx_curr + 2];
+                let dx2 = dx_r * dx_r + dx_g * dx_g + dx_b * dx_b;
+
+                let dy_r = nerf_render_vec[idx_bottom] - nerf_render_vec[idx_curr];
+                let dy_g = nerf_render_vec[idx_bottom + 1] - nerf_render_vec[idx_curr + 1];
+                let dy_b = nerf_render_vec[idx_bottom + 2] - nerf_render_vec[idx_curr + 2];
+                let dy2 = dy_r * dy_r + dy_g * dy_g + dy_b * dy_b;
+
+                importance_data.push((dx2 + dy2).sqrt());
+            }
+        }
+
         let num_gaussians = self.gaussian_model.num_gaussians;
-        let seeded_model = crate::hybrid::seed_gaussians_from_importance(
-            &importance_vec,
+        let device = Default::default();
+
+        let new_gaussian_model = crate::hybrid::seed_gaussians_from_importance::<B>(
+            &importance_data,
             &nerf_render_vec,
-            h,
-            w,
+            h - 1,
+            w - 1,
             num_gaussians,
-            &self.device,
+            &device,
         );
-        self.gaussian_model = seeded_model;
+
+        self.gaussian_model = new_gaussian_model;
         self.gaussian_optim = AdamConfig::new().init();
     }
 
