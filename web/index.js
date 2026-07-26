@@ -80,8 +80,10 @@ const uploadInputMulti = document.getElementById('image-upload-multi');
 const numGaussiansInput = document.getElementById('num-gaussians');
 const lrGaussianInput = document.getElementById('lr-gaussian');
 const lrNerfInput = document.getElementById('lr-nerf');
+const chkNerfGuided = document.getElementById('chk-nerf-guided');
 const btnTrain = document.getElementById('btn-train');
 const btnReset = document.getElementById('btn-reset');
+
 const btnOneClickHybrid = document.getElementById('btn-one-click-hybrid');
 const btnPretrain = document.getElementById('btn-nerf-pretrain');
 const btnSeed = document.getElementById('btn-seed');
@@ -504,16 +506,32 @@ async function resetSession() {
     lossHistoryGaussian = [];
     lossHistoryNerf = [];
     stepCounter = 0;
-    
+    isTraining = false;
+    isLoopRunning = false;
+    btnTrain.textContent = '▶ Start Fitting';
+    btnTrain.classList.remove('btn-stop');
+
+    // Re-enable NeRF-Guided Seeding toggle for new session
+    if (chkNerfGuided) {
+        chkNerfGuided.disabled = false;
+        const label = chkNerfGuided.closest('label');
+        if (label) {
+            label.style.opacity = '';
+            label.style.cursor = '';
+            label.title = '✨ Enable for better quality! Pre-trains NeRF to automatically place 3D Gaussians along detected object boundaries.';
+        }
+    }
+
     // Clear views
     clearCanvas(canvasGaussian);
     clearCanvas(canvasNerf);
     if (canvasBlend) clearCanvas(canvasBlend);
     drawLossChart();
 
-    labelLossGaussian.textContent = 'Loss: --';
-    labelLossNerf.textContent = 'Loss: --';
+    if (labelLossGaussian) labelLossGaussian.textContent = 'Loss: --';
+    if (labelLossNerf) labelLossNerf.textContent = 'Loss: --';
 }
+
 
 function clearCanvas(canvas) {
     if (!canvas) return;
@@ -522,7 +540,6 @@ function clearCanvas(canvas) {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
 
-const chkNerfGuided = document.getElementById('chk-nerf-guided');
 
 // Training toggle
 async function toggleTraining() {
@@ -572,6 +589,16 @@ async function toggleTraining() {
         isTraining = true;
         btnTrain.textContent = '⏸ Pause Fitting';
         btnTrain.classList.add('btn-stop');
+        // Lock the seeding toggle — only applies before first training step
+        if (chkNerfGuided) {
+            chkNerfGuided.disabled = true;
+            const label = chkNerfGuided.closest('label');
+            if (label) {
+                label.style.opacity = '0.45';
+                label.style.cursor = 'not-allowed';
+                label.title = '⏳ NeRF-Guided Seeding already applied at initialization. Reset to use again.';
+            }
+        }
         const lrGaussian = parseFloat(lrGaussianInput.value) || 0.005;
         const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
         console.log(`[System] Starting Multi-View optimization. LR: Explicit GS = ${lrGaussian}, Implicit NeRF = ${lrNerf}`);
