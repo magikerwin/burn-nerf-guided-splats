@@ -198,19 +198,43 @@ impl<B: Backend> crate::model::MultiViewFitter<B> for GaussianModel<B> {
     }
 
     fn forward_loss_multiview(&self, target_v0: &Tensor<B, 3>, target_v1: &Tensor<B, 3>) -> Tensor<B, 1> {
-        let shape = target_v0.shape();
+        self.forward_loss_multiframe(&[target_v0.clone(), target_v1.clone()])
+    }
+
+    fn forward_loss_multiframe(&self, targets: &[Tensor<B, 3>]) -> Tensor<B, 1> {
+        use crate::model::ImageFitter;
+        let k = targets.len();
+        if k == 0 {
+            let device = self.means.val().device();
+            return Tensor::<B, 1>::zeros([1], &device);
+        }
+        if k == 1 {
+            return self.forward_loss(&targets[0]);
+        }
+
+
+        let shape = targets[0].shape();
         let dims = shape.dims::<3>();
         let height = dims[0];
         let width = dims[1];
 
-        let render_v0 = self.render_view(width, height, 0.0);
-        let render_v1 = self.render_view(width, height, 1.0);
+        let mut total_loss = self.render_view(width, height, 0.0)
+            .sub(targets[0].clone())
+            .powf_scalar(2.0)
+            .mean();
 
-        let diff0 = render_v0.sub(target_v0.clone()).powf_scalar(2.0).mean();
-        let diff1 = render_v1.sub(target_v1.clone()).powf_scalar(2.0).mean();
+        for i in 1..k {
+            let v = i as f32 / ((k - 1) as f32);
+            let loss_i = self.render_view(width, height, v)
+                .sub(targets[i].clone())
+                .powf_scalar(2.0)
+                .mean();
+            total_loss = total_loss.add(loss_i);
+        }
 
-        diff0.add(diff1).mul_scalar(0.5)
+        total_loss.div_scalar(k as f32)
     }
+
 }
 
 impl<B: Backend> crate::model::ImageFitter<B> for GaussianModel<B> {

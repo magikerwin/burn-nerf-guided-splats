@@ -46,8 +46,22 @@ where
     M: MultiViewFitter<B> + AutodiffModule<B>,
     O: Optimizer<M, B>,
 {
-    // 1. Forward pass: compute multi-view reconstruction loss
-    let loss = model.forward_loss_multiview(target_v0, target_v1);
+    train_step_multiframe(model, optimizer, &[target_v0.clone(), target_v1.clone()], lr)
+}
+
+/// Executes a single optimization step evaluating joint multi-frame loss across an arbitrary slice of keyframe targets.
+pub fn train_step_multiframe<B: AutodiffBackend, M, O>(
+    model: M,
+    optimizer: &mut O,
+    targets: &[Tensor<B, 3>],
+    lr: f64,
+) -> (M, Tensor<B::InnerBackend, 1>)
+where
+    M: MultiViewFitter<B> + AutodiffModule<B>,
+    O: Optimizer<M, B>,
+{
+    // 1. Forward pass: compute multi-frame reconstruction loss
+    let loss = model.forward_loss_multiframe(targets);
     
     // Extract inner tensor before backward consumes it
     let loss_inner = loss.clone().inner();
@@ -63,6 +77,7 @@ where
 
     (updated_model, loss_inner)
 }
+
 
 #[cfg(test)]
 mod tests {
