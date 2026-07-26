@@ -454,14 +454,27 @@ async function resetSession() {
     btnTrain.textContent = '▶ Start Multi-View Fitting';
     btnTrain.classList.remove('btn-stop');
 
-    btnPretrain.disabled = false;
-    btnPretrain.textContent = '1. Pre-train NeRF (50 Steps)';
-    btnSeed.disabled = true;
-    btnSeed.textContent = '2. Initialize 3D GS on Edges';
+    if (btnPretrain) {
+        btnPretrain.disabled = false;
+        btnPretrain.textContent = '1. Pre-train NeRF (50 Steps)';
+    }
+    if (btnSeed) {
+        btnSeed.disabled = true;
+        btnSeed.textContent = '2. Initialize 3D GS on Edges';
+    }
 
-    // Reset pipeline step cards UI
-    if (step1Card) step1Card.className = 'pipeline-card active';
-    if (step2Card) step2Card.className = 'pipeline-card';
+    // Reset inline pipeline step items
+    if (step1Card) step1Card.className = 'inline-step-item';
+    if (step1Status) step1Status.textContent = 'Pre-train coordinate network';
+    if (step2Card) step2Card.className = 'inline-step-item';
+    if (step2Status) step2Status.textContent = 'Extract spatial derivatives ∇I(x,y)';
+    if (step3Card) step3Card.className = 'inline-step-item';
+    if (step3Status) step3Status.textContent = 'Sample Gaussian centers μ';
+    if (btnOneClickHybrid) {
+        btnOneClickHybrid.disabled = false;
+        btnOneClickHybrid.textContent = '🚀 Run Guided Pipeline';
+    }
+
 
     const numGaussians = parseInt(numGaussiansInput.value) || 500;
     const numFrames = targetFrames.length;
@@ -484,7 +497,6 @@ async function resetSession() {
         console.log(`[System] Initialized & Warmed up Multi-Frame session at ${width}x${height} grid with ${numGaussians} 3D Gaussians across ${numFrames} keyframe views.`);
     });
 
-
     lossHistoryGaussian = [];
     lossHistoryNerf = [];
     stepCounter = 0;
@@ -499,13 +511,14 @@ async function resetSession() {
     labelLossNerf.textContent = 'Loss: --';
 }
 
-
 function clearCanvas(canvas) {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
+
+const chkNerfGuided = document.getElementById('chk-nerf-guided');
 
 // Training toggle
 async function toggleTraining() {
@@ -524,6 +537,36 @@ async function toggleTraining() {
             });
         }
     } else {
+        // Automatic NeRF Guided Pre-training on first start if checked
+        if (chkNerfGuided && chkNerfGuided.checked && lossHistoryGaussian.length === 0) {
+            btnTrain.disabled = true;
+            btnTrain.textContent = '⏳ Guided Seeding...';
+            const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
+            console.log("[Pipeline] Automatically pre-training NeRF for 50 steps...");
+
+            for (let i = 1; i <= 50; i++) {
+                session.step_nerf_fast(lrNerf);
+                if (i % 10 === 0) {
+                    await gpuQueue.run(async () => {
+                        const losses = await session.get_losses();
+                        labelLossNerf.textContent = `Loss: ${losses[1].toFixed(5)}`;
+                        const rgbN = await session.get_nerf_render_view(currentViewV);
+                        renderModelOutput(canvasNerf, rgbN);
+                        drawLossChart();
+                    });
+                }
+                await new Promise(resolve => setTimeout(resolve, 2));
+            }
+
+            console.log("[Pipeline] Seeding 3D Gaussians along NeRF spatial gradients...");
+            await gpuQueue.run(async () => {
+                await session.seed_from_nerf();
+                const rgbG = await session.get_gaussian_render_view(currentViewV);
+                renderModelOutput(canvasGaussian, rgbG);
+            });
+            btnTrain.disabled = false;
+        }
+
         isTraining = true;
         btnTrain.textContent = '⏸ Pause Fitting';
         btnTrain.classList.add('btn-stop');
@@ -533,6 +576,7 @@ async function toggleTraining() {
         requestAnimationFrame(trainingLoop);
     }
 }
+
 
 let stepCounter = 0;
 
@@ -581,7 +625,6 @@ async function trainingLoop() {
         return;
     }
 
-
     // Micro-yield execution to browser event loop
     await new Promise(resolve => setTimeout(resolve, 2));
 
@@ -589,7 +632,6 @@ async function trainingLoop() {
         requestAnimationFrame(() => trainingLoop());
     }
 }
-
 
 // Automated 1-Click NeRF-Guided Seeding Pipeline
 async function runOneClickHybridPipeline() {
@@ -600,12 +642,12 @@ async function runOneClickHybridPipeline() {
 
     if (btnOneClickHybrid) {
         btnOneClickHybrid.disabled = true;
-        btnOneClickHybrid.textContent = '⌛ Running Guided Pipeline...';
+        btnOneClickHybrid.textContent = '⏳ Running Pipeline...';
     }
 
     // Step 1: Pre-train NeRF
-    if (step1Card) step1Card.className = 'stepper-card active';
-    if (step1Status) step1Status.textContent = 'Pre-training NeRF (50 steps)...';
+    if (step1Card) step1Card.className = 'inline-step-item active';
+    if (step1Status) step1Status.textContent = 'Training NeRF (50 steps)...';
 
     const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
     console.log("[Hybrid Pipeline] Step 1: Pre-training Implicit NeRF for 50 steps...");
@@ -624,21 +666,21 @@ async function runOneClickHybridPipeline() {
         await new Promise(resolve => setTimeout(resolve, 2));
     }
 
-    if (step1Card) step1Card.className = 'stepper-card complete';
-    if (step1Status) step1Status.textContent = 'Complete ✓';
+    if (step1Card) step1Card.className = 'inline-step-item complete';
+    if (step1Status) step1Status.textContent = '1. Pre-trained ✓';
 
     // Step 2 & 3: Extract Gradients & Seed 3D Gaussians
-    if (step2Card) step2Card.className = 'stepper-card active';
-    if (step2Status) step2Status.textContent = 'Extracting Spatial Edges...';
+    if (step2Card) step2Card.className = 'inline-step-item active';
+    if (step2Status) step2Status.textContent = 'Extracting Edges...';
 
     console.log("[Hybrid Pipeline] Step 2 & 3: Extracting NeRF spatial gradients and seeding 3D Gaussians...");
     await new Promise(resolve => setTimeout(resolve, 200));
 
-    if (step2Card) step2Card.className = 'stepper-card complete';
-    if (step2Status) step2Status.textContent = 'Complete ✓';
+    if (step2Card) step2Card.className = 'inline-step-item complete';
+    if (step2Status) step2Status.textContent = '2. Edges Extracted ✓';
 
-    if (step3Card) step3Card.className = 'stepper-card active';
-    if (step3Status) step3Status.textContent = 'Seeding 3D Gaussians...';
+    if (step3Card) step3Card.className = 'inline-step-item active';
+    if (step3Status) step3Status.textContent = 'Seeding Gaussians...';
 
     await gpuQueue.run(async () => {
         await session.seed_from_nerf();
@@ -646,15 +688,16 @@ async function runOneClickHybridPipeline() {
         renderModelOutput(canvasGaussian, rgbG);
     });
 
-    if (step3Card) step3Card.className = 'stepper-card complete';
-    if (step3Status) step3Status.textContent = 'Complete ✓';
+    if (step3Card) step3Card.className = 'inline-step-item complete';
+    if (step3Status) step3Status.textContent = '3. Gaussians Seeded ✓';
 
     if (btnOneClickHybrid) {
         btnOneClickHybrid.disabled = false;
-        btnOneClickHybrid.textContent = '✓ 1-Click Guided Initialization Complete';
+        btnOneClickHybrid.textContent = '✓ Guided Pipeline Complete';
     }
-    if (btnSeed) btnSeed.disabled = false;
     console.log("[Hybrid Pipeline] Pipeline Complete! 3D Gaussians initialized accurately along object boundaries.");
+}
+ng object boundaries.");
 }
 
 // Pre-train NeRF to capture coarse multi-view edges

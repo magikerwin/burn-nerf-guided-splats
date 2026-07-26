@@ -27,18 +27,22 @@
 
 
 
-        <!-- Main Hero Control Bar -->
+        <!-- Streamlined Hero Control Bar -->
         <div class="card hero-control-bar">
             <div class="control-bar-left">
-                <button id="btn-train" class="btn primary-btn large-btn">▶ Start Multi-View Fitting</button>
+                <button id="btn-train" class="btn primary-btn large-btn">▶ Start Fitting</button>
                 <button id="btn-reset" class="btn secondary-btn">Reset</button>
+                <label class="checkbox-toggle" title="Automatically pre-train NeRF to guide 3D Gaussian placement">
+                    <input type="checkbox" id="chk-nerf-guided" checked>
+                    <span>🎓 NeRF-Guided Seeding</span>
+                </label>
             </div>
 
             <div class="control-bar-center">
                 <div class="orbit-slider-container">
                     <div class="orbit-slider-header">
                         <button id="btn-autoplay" class="btn text-btn">▶ Play Orbit</button>
-                        <span id="view-angle-text" class="badge">Photo Trajectory v = 0.50</span>
+                        <span id="view-angle-text" class="badge">View v = 0.50</span>
                     </div>
                     <div class="slider-wrapper">
                         <span id="label-view-start" class="slider-end-label orange-text">Photo 1</span>
@@ -50,57 +54,16 @@
 
             <div class="control-bar-right">
                 <div class="select-wrapper">
-                    <label for="resolution-select" class="select-label">Grid Resolution:</label>
+                    <label for="resolution-select" class="select-label">Res:</label>
                     <select id="resolution-select" class="custom-select">
-                        <option value="64" selected>64 x 64 (Fast & Responsive)</option>
-                        <option value="128">128 x 128 (High Detail)</option>
+                        <option value="64" selected>64x64</option>
+                        <option value="128">128x128</option>
                     </select>
                 </div>
             </div>
         </div>
 
-        <!-- Educational NeRF-Guided Hybrid Seeding Banner -->
-        <section class="card hybrid-banner-card">
-            <div class="hybrid-banner-header">
-                <div class="hybrid-title">
-                    <h3>🎓 NeRF-Guided Hybrid Seeding Pipeline</h3>
-                    <span class="hybrid-subtitle">Implicit NeRF gradients guide targeted 3D Gaussian placement, eliminating floaters.</span>
-                </div>
-                <button id="btn-one-click-hybrid" class="btn accent-btn large-btn">🚀 1-Click Guided Initialization</button>
-            </div>
 
-            <div class="stepper-grid">
-                <!-- Step 1 Card -->
-                <div id="step-1-card" class="stepper-card active">
-                    <div class="stepper-card-header">
-                        <span id="step-1-badge" class="step-num-badge">Step 1</span>
-                        <span id="step-1-status" class="step-status">Ready</span>
-                    </div>
-                    <h4>Implicit NeRF Pre-train</h4>
-                    <p>Trains coordinate MLP to capture coarse 3D geometry & spatial gradients across views.</p>
-                </div>
-
-                <!-- Step 2 Card -->
-                <div id="step-2-card" class="stepper-card">
-                    <div class="stepper-card-header">
-                        <span id="step-2-badge" class="step-num-badge">Step 2</span>
-                        <span id="step-2-status" class="step-status">Waiting</span>
-                    </div>
-                    <h4>Edge Gradient Bridge</h4>
-                    <p>Computes finite difference spatial derivatives ∇I(x, y) to pinpoint sharp object edges.</p>
-                </div>
-
-                <!-- Step 3 Card -->
-                <div id="step-3-card" class="stepper-card">
-                    <div class="stepper-card-header">
-                        <span id="step-3-badge" class="step-num-badge">Step 3</span>
-                        <span id="step-3-status" class="step-status">Waiting</span>
-                    </div>
-                    <h4>Explicit 3D GS Seeding</h4>
-                    <p>Samples Gaussian centers μ along high-gradient boundaries for floater-free rendering.</p>
-                </div>
-            </div>
-        </section>
 
         <!-- Main 3-Card Centerpiece Comparison Row -->
         <main class="visualizer-grid">
@@ -190,15 +153,15 @@
                     </div>
                 </div>
 
-                <!-- Column 2: Individual Step Triggers -->
+                <!-- Column 2: Guided Pipeline Concept -->
                 <div class="drawer-column">
-                    <h4>2. Manual Step Experiments</h4>
-                    <div class="form-group">
-                        <p style="font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 0.5rem;">Run individual steps manually to analyze intermediate states:</p>
-                        <button id="btn-nerf-pretrain" class="btn secondary-btn" style="width:100%; margin-bottom:0.5rem;">Step 1. Pre-train NeRF (50 Steps)</button>
-                        <button id="btn-seed" class="btn secondary-btn" style="width:100%;" disabled>Step 2 & 3. Initialize GS on Edges</button>
+                    <h4>2. Hybrid Guided Concept</h4>
+                    <div class="form-group" style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.45;">
+                        <p style="margin-bottom: 0.5rem;"><strong>Why NeRF guides 3D GS?</strong></p>
+                        <p>Uniform random initialization creates floaters and artifacts. Seeding Gaussians along NeRF-derived spatial gradients forces 3D Gaussians to concentrate on true object surfaces!</p>
                     </div>
                 </div>
+
 
                 <!-- Column 3: Loss Chart & Blend View -->
                 <div class="drawer-column">
