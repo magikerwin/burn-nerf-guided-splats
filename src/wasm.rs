@@ -4,21 +4,11 @@ use burn::optim::{Adam, AdamConfig};
 use burn::tensor::{Tensor, TensorData};
 use crate::model::gaussian::GaussianModel;
 use crate::model::nerf::NerfModel;
-use crate::model::ImageFitter;
-use crate::training::train_step;
-
-type B = Autodiff<Wgpu>;
-
-use wasm_bindgen::prelude::*;
-use burn::backend::{Autodiff, Wgpu};
-use burn::optim::{Adam, AdamConfig};
-use burn::tensor::{Tensor, TensorData};
-use crate::model::gaussian::GaussianModel;
-use crate::model::nerf::NerfModel;
 use crate::model::MultiViewFitter;
 use crate::training::train_step_multiview;
 
 type B = Autodiff<Wgpu>;
+
 
 #[wasm_bindgen]
 pub struct WasmTrainingSession {
