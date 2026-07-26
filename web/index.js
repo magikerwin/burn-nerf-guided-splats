@@ -1,4 +1,5 @@
-import init, { WasmTrainingSession, create_multiframe_session, init_panic_hook, init_webgpu } from './pkg/burn_nerf_guided_splats.js';
+import init, { WasmTrainingSession, create_multiframe_session, init_panic_hook } from './pkg/burn_nerf_guided_splats.js';
+
 
 // Redirect Console output to HTML developer console
 const developerConsole = document.getElementById('developer-console');
@@ -134,14 +135,12 @@ async function start() {
     await init();
     init_panic_hook();
     
-    // Initialize WebGPU context asynchronously first
-    await init_webgpu();
-    
     updateCanvasDimensions();
 
     // Set up default synthetic target views
     generateSyntheticTargets();
     await resetSession();
+
 }
 
 
@@ -493,11 +492,9 @@ async function resetSession() {
     // Serialize new WASM session creation through gpuQueue to let previous WGPU buffers unmap cleanly
     await gpuQueue.run(async () => {
         session = create_multiframe_session(width, height, numGaussians, flatConcat, numFrames);
-        // Pre-compile WGSL compute shader pipelines asynchronously so Start Fitting responds instantly
-        session.step_gaussian_fast(0.0);
-        session.step_nerf_fast(0.0);
-        console.log(`[System] Initialized & Warmed up Multi-Frame session at ${width}x${height} grid with ${numGaussians} 3D Gaussians across ${numFrames} keyframe views.`);
+        console.log(`[System] Initialized Multi-Frame session at ${width}x${height} grid with ${numGaussians} 3D Gaussians across ${numFrames} keyframe views.`);
     });
+
 
     lossHistoryGaussian = [];
     lossHistoryNerf = [];
@@ -556,19 +553,6 @@ async function trainingLoop() {
     const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
 
     try {
-        // Run automatic NeRF guided seeding on step 0 if enabled
-        if (stepCounter === 0 && chkNerfGuided && chkNerfGuided.checked) {
-            console.log("[Pipeline] Automatically pre-training NeRF for 50 steps...");
-            for (let i = 1; i <= 50; i++) {
-                session.step_nerf_fast(lrNerf);
-                await new Promise(resolve => setTimeout(resolve, 1));
-            }
-            console.log("[Pipeline] Seeding 3D Gaussians along NeRF spatial gradients...");
-            await gpuQueue.run(async () => {
-                await session.seed_from_nerf();
-            });
-        }
-
         // Fast non-blocking GPU optimization steps (Zero CPU buffer mapAsync readbacks!)
         session.step_gaussian_fast(lrGaussian);
         session.step_nerf_fast(lrNerf);
@@ -613,6 +597,7 @@ async function trainingLoop() {
         requestAnimationFrame(() => trainingLoop());
     }
 }
+
 
 
 // Automated 1-Click NeRF-Guided Seeding Pipeline
