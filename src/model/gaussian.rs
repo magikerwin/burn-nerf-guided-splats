@@ -3,7 +3,7 @@ use burn::tensor::{activation::sigmoid, backend::Backend, Int, Tensor};
 
 #[derive(Module, Debug)]
 pub struct GaussianModel<B: Backend> {
-    pub means: Param<Tensor<B, 2>>,     // [N, 2]
+    pub means: Param<Tensor<B, 2>>,     // [N, 3] (3D positions x, y, z)
     pub scales: Param<Tensor<B, 2>>,    // [N, 2]
     pub rotations: Param<Tensor<B, 2>>, // [N, 1]
     pub colors: Param<Tensor<B, 2>>,    // [N, 3]
@@ -14,9 +14,9 @@ pub struct GaussianModel<B: Backend> {
 impl<B: Backend> GaussianModel<B> {
     /// Initializes a new GaussianModel with random parameters.
     pub fn new(num_gaussians: usize, device: &B::Device) -> Self {
-        // Initialize means uniformly in [0, 1]
+        // Initialize means uniformly in [0, 1] for 3D coordinates (x, y, z)
         let means = Tensor::<B, 2>::random(
-            [num_gaussians, 2],
+            [num_gaussians, 3],
             burn::tensor::Distribution::Uniform(0.0, 1.0),
             device,
         );
@@ -59,6 +59,27 @@ impl<B: Backend> GaussianModel<B> {
         }
     }
 
+    /// Projects 3D Gaussian means (x, y, z) to 2D image plane (x', y') given camera view parameter v in [0, 1].
+    pub fn compute_projected_means(&self, view_v: f32) -> Tensor<B, 2> {
+        let theta = (view_v - 0.5) * 0.6; // Rotation angle in radians (~35 deg range)
+        let cos_t = theta.cos();
+        let sin_t = theta.sin();
+
+        let means = self.means.val();
+        let num_dims = means.shape().dims::<2>()[1];
+
+        if num_dims == 3 {
+            let x = means.clone().narrow(1, 0, 1).sub_scalar(0.5);
+            let y = means.clone().narrow(1, 1, 1);
+            let z = means.narrow(1, 2, 1).sub_scalar(0.5);
+
+            let x_proj = x.mul_scalar(cos_t).sub(z.mul_scalar(sin_t)).add_scalar(0.5);
+            Tensor::cat(vec![x_proj, y], 1)
+        } else {
+            means
+        }
+    }
+
     /// Computes the components of the inverse covariance matrix for all Gaussians.
     /// Returns (inv_cov_00, inv_cov_01, inv_cov_11) each of shape [N, 1].
     pub fn compute_inverse_covariance(&self) -> (Tensor<B, 2>, Tensor<B, 2>, Tensor<B, 2>) {
@@ -80,21 +101,15 @@ impl<B: Backend> GaussianModel<B> {
         let cos_sin = cos.mul(sin);
 
         // Compute covariance components:
-        // a = sx^2 * cos^2 + sy^2 * sin^2
-        // b = (sx^2 - sy^2) * cos * sin
-        // d = sx^2 * sin^2 + sy^2 * cos^2
         let a = sx2.clone().mul(cos2.clone()).add(sy2.clone().mul(sin2.clone()));
         let b = sx2.clone().sub(sy2.clone()).mul(cos_sin);
         let d = sx2.mul(sin2).add(sy2.mul(cos2));
 
         // Determinant of Sigma: det = sx^2 * sy^2.
-        // We add epsilon to prevent division by zero.
         let det = sx.mul(sy).powf_scalar(2.0).add_scalar(1e-6);
         let inv_det = det.recip(); // [N, 1]
 
         // Inverse Covariance components:
-        // Sigma^-1 = 1/det * [ d, -b ]
-        //                    [ -b, a ]
         let inv_cov_00 = d.mul(inv_det.clone());
         let inv_cov_01 = b.mul_scalar(-1.0).mul(inv_det.clone());
         let inv_cov_11 = a.mul(inv_det);
@@ -102,10 +117,9 @@ impl<B: Backend> GaussianModel<B> {
         (inv_cov_00, inv_cov_01, inv_cov_11)
     }
 
-    /// Renders the Gaussians given a pre-computed coordinate grid of shape [H, W, 2].
-    /// Returns a rendered image tensor of shape [H, W, 3].
-    pub fn render_with_coords(&self, coords: Tensor<B, 3>) -> Tensor<B, 3> {
-        let n = self.means.val().shape().dims::<2>()[0];
+    /// Renders the Gaussians with explicit 2D center positions and coordinate grid.
+    pub fn render_with_coords_and_means(&self, coords: Tensor<B, 3>, means_2d: Tensor<B, 2>) -> Tensor<B, 3> {
+        let n = self.num_gaussians;
 
         // 1. Compute inverse covariance elements
         let (c00, c01, c11) = self.compute_inverse_covariance(); // each is [N, 1]
@@ -116,10 +130,8 @@ impl<B: Backend> GaussianModel<B> {
         let c11_3d = c11.unsqueeze_dim::<3>(2);
 
         // 2. Compute differences: pixel_coords - means
-        // coords has shape [H, W, 2]. Reshape to [1, H, W, 2]
         let coords_4d = coords.unsqueeze_dim::<4>(0);
-        // means has shape [N, 2]. Reshape to [N, 1, 1, 2]
-        let means_4d = self.means.val().reshape([n, 1, 1, 2]);
+        let means_4d = means_2d.reshape([n, 1, 1, 2]);
 
         // Broadcasted subtraction: [N, H, W, 2]
         let diff = coords_4d.sub(means_4d);
@@ -129,7 +141,6 @@ impl<B: Backend> GaussianModel<B> {
         let dy = diff.narrow(3, 1, 1).squeeze_dim(3);
 
         // 3. Compute power exponent for each Gaussian at each pixel:
-        // power = -0.5 * (c00 * dx^2 + 2 * c01 * dx * dy + c11 * dy^2)
         let dx2 = dx.clone().powf_scalar(2.0);
         let dy2 = dy.clone().powf_scalar(2.0);
         let dx_dy = dx.mul(dy);
@@ -144,12 +155,9 @@ impl<B: Backend> GaussianModel<B> {
         let g = power.exp();
 
         // 4. Multiply by opacities and colors and sum
-        // opacities has shape [N, 1]. Apply sigmoid and reshape to [N, 1, 1, 1]
         let opac = sigmoid(self.opacities.val()).reshape([n, 1, 1, 1]);
-        // colors has shape [N, 3]. Apply sigmoid and reshape to [N, 1, 1, 3]
         let col = sigmoid(self.colors.val()).reshape([n, 1, 1, 3]);
 
-        // Reshape G to [N, H, W, 1]
         let g_4d = g.unsqueeze_dim::<4>(3);
 
         // Contribution of each Gaussian: [N, H, W, 3]
@@ -161,10 +169,16 @@ impl<B: Backend> GaussianModel<B> {
         // Squeeze first dimension to return [H, W, 3]
         rendered_sum.squeeze_dim(0)
     }
+
+    /// Renders the Gaussians given a pre-computed coordinate grid of shape [H, W, 2].
+    pub fn render_with_coords(&self, coords: Tensor<B, 3>) -> Tensor<B, 3> {
+        let projected_means = self.compute_projected_means(0.5);
+        self.render_with_coords_and_means(coords, projected_means)
+    }
 }
 
-impl<B: Backend> crate::model::ImageFitter<B> for GaussianModel<B> {
-    fn render(&self, width: usize, height: usize) -> Tensor<B, 3> {
+impl<B: Backend> crate::model::MultiViewFitter<B> for GaussianModel<B> {
+    fn render_view(&self, width: usize, height: usize, view_v: f32) -> Tensor<B, 3> {
         let device = self.means.val().device();
 
         // Generate coordinates grid (bounds expected as i64)
@@ -179,16 +193,40 @@ impl<B: Backend> crate::model::ImageFitter<B> for GaussianModel<B> {
             2,
         );
 
-        self.render_with_coords(coords)
+        let projected_means = self.compute_projected_means(view_v);
+        self.render_with_coords_and_means(coords, projected_means)
+    }
+
+    fn forward_loss_multiview(&self, target_v0: &Tensor<B, 3>, target_v1: &Tensor<B, 3>) -> Tensor<B, 1> {
+        let shape = target_v0.shape();
+        let dims = shape.dims::<3>();
+        let height = dims[0];
+        let width = dims[1];
+
+        let render_v0 = self.render_view(width, height, 0.0);
+        let render_v1 = self.render_view(width, height, 1.0);
+
+        let diff0 = render_v0.sub(target_v0.clone()).powf_scalar(2.0).mean();
+        let diff1 = render_v1.sub(target_v1.clone()).powf_scalar(2.0).mean();
+
+        diff0.add(diff1).mul_scalar(0.5)
+    }
+}
+
+impl<B: Backend> crate::model::ImageFitter<B> for GaussianModel<B> {
+    fn render(&self, width: usize, height: usize) -> Tensor<B, 3> {
+        use crate::model::MultiViewFitter;
+        self.render_view(width, height, 0.5)
     }
 
     fn forward_loss(&self, target_image: &Tensor<B, 3>) -> Tensor<B, 1> {
+        use crate::model::MultiViewFitter;
         let shape = target_image.shape();
         let dims = shape.dims::<3>();
         let height = dims[0];
         let width = dims[1];
 
-        let rendered = self.render(width, height);
+        let rendered = self.render_view(width, height, 0.0);
         let diff = rendered.sub(target_image.clone());
         diff.powf_scalar(2.0).mean()
     }
@@ -197,7 +235,7 @@ impl<B: Backend> crate::model::ImageFitter<B> for GaussianModel<B> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::ImageFitter;
+    use crate::model::{ImageFitter, MultiViewFitter};
     use burn::backend::Flex;
     use burn::tensor::Int;
 
@@ -230,6 +268,9 @@ mod tests {
 
         let rendered = model.render_with_coords(coords);
         assert_eq!(rendered.shape().dims::<3>(), [8, 8, 3]);
+
+        let view_render = model.render_view(8, 8, 0.0);
+        assert_eq!(view_render.shape().dims::<3>(), [8, 8, 3]);
     }
 
     #[test]
@@ -247,3 +288,4 @@ mod tests {
         assert_eq!(loss.shape().dims::<1>(), [1]);
     }
 }
+

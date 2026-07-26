@@ -2,7 +2,7 @@ use burn::module::AutodiffModule;
 use burn::optim::{GradientsParams, Optimizer};
 use burn::tensor::backend::AutodiffBackend;
 use burn::tensor::Tensor;
-use crate::model::ImageFitter;
+use crate::model::{ImageFitter, MultiViewFitter};
 
 /// Executes a single optimization step for any model implementing `ImageFitter` and `AutodiffModule`.
 /// Returns the updated model and the loss tensor.
@@ -34,6 +34,36 @@ where
     (updated_model, loss_inner)
 }
 
+/// Executes a single optimization step evaluating joint multi-view loss across multiple views.
+pub fn train_step_multiview<B: AutodiffBackend, M, O>(
+    model: M,
+    optimizer: &mut O,
+    target_v0: &Tensor<B, 3>,
+    target_v1: &Tensor<B, 3>,
+    lr: f64,
+) -> (M, Tensor<B::InnerBackend, 1>)
+where
+    M: MultiViewFitter<B> + AutodiffModule<B>,
+    O: Optimizer<M, B>,
+{
+    // 1. Forward pass: compute multi-view reconstruction loss
+    let loss = model.forward_loss_multiview(target_v0, target_v1);
+    
+    // Extract inner tensor before backward consumes it
+    let loss_inner = loss.clone().inner();
+
+    // 2. Backward pass: compute gradients
+    let grads = loss.backward();
+
+    // 3. Map gradients to parameters
+    let grads = GradientsParams::from_grads(grads, &model);
+
+    // 4. Update model parameters via optimizer
+    let updated_model = optimizer.step(lr, model, grads);
+
+    (updated_model, loss_inner)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -50,14 +80,19 @@ mod tests {
         // 1. Instantiate the model under autodiff backend wrapper
         let model = GaussianModel::<B>::new(5, &device);
 
-        // 2. Create the target image and optimizer
-        let target = Tensor::<B, 3>::zeros([8, 8, 3], &device);
+        // 2. Create target images and optimizer
+        let target0 = Tensor::<B, 3>::zeros([8, 8, 3], &device);
+        let target1 = Tensor::<B, 3>::zeros([8, 8, 3], &device);
         let mut optimizer = AdamConfig::new().init();
 
-        // 3. Perform a single training step
-        let (_updated_model, loss_tensor) = train_step(model, &mut optimizer, &target, 1e-3);
+        // 3. Perform single training step
+        let (model, loss_tensor) = train_step(model, &mut optimizer, &target0, 1e-3);
         let loss_val = loss_tensor.into_data().into_vec::<f32>().unwrap()[0];
-
         assert!(loss_val >= 0.0);
+
+        let (_updated_model, mv_loss_tensor) = train_step_multiview(model, &mut optimizer, &target0, &target1, 1e-3);
+        let mv_loss_val = mv_loss_tensor.into_data().into_vec::<f32>().unwrap()[0];
+        assert!(mv_loss_val >= 0.0);
     }
 }
+
