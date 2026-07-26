@@ -5,17 +5,15 @@ use burn::tensor::{Tensor, TensorData};
 use crate::model::gaussian::GaussianModel;
 use crate::model::nerf::NerfModel;
 use crate::model::MultiViewFitter;
-use crate::training::train_step_multiview;
+use crate::training::train_step_multiframe;
 
 type B = Autodiff<Wgpu>;
-
 
 #[wasm_bindgen]
 pub struct WasmTrainingSession {
     width: usize,
     height: usize,
-    target_tensor_0: Tensor<B, 3>,
-    target_tensor_1: Tensor<B, 3>,
+    target_tensors: Vec<Tensor<B, 3>>,
     gaussian_model: GaussianModel<B>,
     gaussian_optim: burn::optim::adaptor::OptimizerAdaptor<Adam, GaussianModel<B>, B>,
     nerf_model: NerfModel<B>,
@@ -33,24 +31,27 @@ impl WasmTrainingSession {
         target_rgb_0: &[u8],
         target_rgb_1: &[u8],
     ) -> Self {
+        Self::new_multiframe(width, height, num_gaussians, &[target_rgb_0, target_rgb_1])
+    }
+
+    pub fn new_multiframe(
+        width: usize,
+        height: usize,
+        num_gaussians: usize,
+        rgb_slices: &[&[u8]],
+    ) -> Self {
         let device = Default::default();
-
-        let mut float_data_0 = Vec::with_capacity(target_rgb_0.len());
-        for &val in target_rgb_0.iter() {
-            float_data_0.push(val as f32 / 255.0);
-        }
-
-        let mut float_data_1 = Vec::with_capacity(target_rgb_1.len());
-        for &val in target_rgb_1.iter() {
-            float_data_1.push(val as f32 / 255.0);
-        }
-
         let shape = [height, width, 3];
-        let tensor_data_0 = TensorData::new(float_data_0, shape);
-        let target_tensor_0 = Tensor::<B, 3>::from_data(tensor_data_0, &device);
+        let mut target_tensors = Vec::with_capacity(rgb_slices.len());
 
-        let tensor_data_1 = TensorData::new(float_data_1, shape);
-        let target_tensor_1 = Tensor::<B, 3>::from_data(tensor_data_1, &device);
+        for slice in rgb_slices {
+            let mut float_data = Vec::with_capacity(slice.len());
+            for &val in slice.iter() {
+                float_data.push(val as f32 / 255.0);
+            }
+            let tensor_data = TensorData::new(float_data, shape);
+            target_tensors.push(Tensor::<B, 3>::from_data(tensor_data, &device));
+        }
 
         let gaussian_model = GaussianModel::<B>::new(num_gaussians, &device);
         let gaussian_optim = AdamConfig::new().init();
@@ -61,8 +62,7 @@ impl WasmTrainingSession {
         Self {
             width,
             height,
-            target_tensor_0,
-            target_tensor_1,
+            target_tensors,
             gaussian_model,
             gaussian_optim,
             nerf_model,
@@ -72,11 +72,10 @@ impl WasmTrainingSession {
     }
 
     pub async fn step_gaussian(&mut self, lr: f64) -> f32 {
-        let (updated_model, loss_tensor) = train_step_multiview(
+        let (updated_model, loss_tensor) = train_step_multiframe(
             self.gaussian_model.clone(),
             &mut self.gaussian_optim,
-            &self.target_tensor_0,
-            &self.target_tensor_1,
+            &self.target_tensors,
             lr,
         );
         self.gaussian_model = updated_model;
@@ -85,11 +84,10 @@ impl WasmTrainingSession {
     }
 
     pub async fn step_nerf(&mut self, lr: f64) -> f32 {
-        let (updated_model, loss_tensor) = train_step_multiview(
+        let (updated_model, loss_tensor) = train_step_multiframe(
             self.nerf_model.clone(),
             &mut self.nerf_optim,
-            &self.target_tensor_0,
-            &self.target_tensor_1,
+            &self.target_tensors,
             lr,
         );
         self.nerf_model = updated_model;
@@ -185,6 +183,27 @@ impl WasmTrainingSession {
         rgb
     }
 }
+
+#[wasm_bindgen]
+pub fn create_multiframe_session(
+    width: usize,
+    height: usize,
+    num_gaussians: usize,
+    flat_rgb_concatenated: &[u8],
+    num_frames: usize,
+) -> WasmTrainingSession {
+    let frame_len = width * height * 3;
+    let mut slices = Vec::with_capacity(num_frames);
+    for i in 0..num_frames {
+        let start = i * frame_len;
+        let end = start + frame_len;
+        if end <= flat_rgb_concatenated.len() {
+            slices.push(&flat_rgb_concatenated[start..end]);
+        }
+    }
+    WasmTrainingSession::new_multiframe(width, height, num_gaussians, &slices)
+}
+
 
 #[wasm_bindgen]
 pub fn init_panic_hook() {
