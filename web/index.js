@@ -124,7 +124,7 @@ async function start() {
 
     // Set up default synthetic target views
     generateSyntheticTargets();
-    resetSession();
+    await resetSession();
     
     // Wire up events
     resolutionSelect.addEventListener('change', handleResolutionChange);
@@ -143,6 +143,7 @@ async function start() {
     if (btnToggleAdvanced) btnToggleAdvanced.addEventListener('click', () => advancedDrawer.classList.toggle('hidden'));
     if (btnCloseAdvanced) btnCloseAdvanced.addEventListener('click', () => advancedDrawer.classList.add('hidden'));
 }
+
 
 
 // Update canvas DOM sizes
@@ -522,51 +523,18 @@ const chkNerfGuided = document.getElementById('chk-nerf-guided');
 
 // Training toggle
 async function toggleTraining() {
+
+    if (!session) {
+        console.warn("[System] Session is still initializing, please wait...");
+        return;
+    }
+
     if (isTraining) {
         isTraining = false;
         btnTrain.textContent = '▶ Continue Fitting';
         btnTrain.classList.remove('btn-stop');
         console.log(`[System] Multi-View Training paused at Step ${lossHistoryGaussian.length}.`);
-        if (session) {
-            await gpuQueue.run(async () => {
-                const rgbG = await session.get_gaussian_render_view(currentViewV);
-                const rgbN = await session.get_nerf_render_view(currentViewV);
-                renderModelOutput(canvasGaussian, rgbG);
-                renderModelOutput(canvasNerf, rgbN);
-                updateBlendCanvas();
-            });
-        }
     } else {
-        // Automatic NeRF Guided Pre-training on first start if checked
-        if (chkNerfGuided && chkNerfGuided.checked && lossHistoryGaussian.length === 0) {
-            btnTrain.disabled = true;
-            btnTrain.textContent = '⏳ Guided Seeding...';
-            const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
-            console.log("[Pipeline] Automatically pre-training NeRF for 50 steps...");
-
-            for (let i = 1; i <= 50; i++) {
-                session.step_nerf_fast(lrNerf);
-                if (i % 10 === 0) {
-                    await gpuQueue.run(async () => {
-                        const losses = await session.get_losses();
-                        labelLossNerf.textContent = `Loss: ${losses[1].toFixed(5)}`;
-                        const rgbN = await session.get_nerf_render_view(currentViewV);
-                        renderModelOutput(canvasNerf, rgbN);
-                        drawLossChart();
-                    });
-                }
-                await new Promise(resolve => setTimeout(resolve, 2));
-            }
-
-            console.log("[Pipeline] Seeding 3D Gaussians along NeRF spatial gradients...");
-            await gpuQueue.run(async () => {
-                await session.seed_from_nerf();
-                const rgbG = await session.get_gaussian_render_view(currentViewV);
-                renderModelOutput(canvasGaussian, rgbG);
-            });
-            btnTrain.disabled = false;
-        }
-
         isTraining = true;
         btnTrain.textContent = '⏸ Pause Fitting';
         btnTrain.classList.add('btn-stop');
@@ -576,7 +544,6 @@ async function toggleTraining() {
         requestAnimationFrame(trainingLoop);
     }
 }
-
 
 let stepCounter = 0;
 
@@ -588,6 +555,19 @@ async function trainingLoop() {
     const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
 
     try {
+        // Run automatic NeRF guided seeding on step 0 if enabled
+        if (stepCounter === 0 && chkNerfGuided && chkNerfGuided.checked) {
+            console.log("[Pipeline] Automatically pre-training NeRF for 50 steps...");
+            for (let i = 1; i <= 50; i++) {
+                session.step_nerf_fast(lrNerf);
+                await new Promise(resolve => setTimeout(resolve, 1));
+            }
+            console.log("[Pipeline] Seeding 3D Gaussians along NeRF spatial gradients...");
+            await gpuQueue.run(async () => {
+                await session.seed_from_nerf();
+            });
+        }
+
         // Fast non-blocking GPU optimization steps (Zero CPU buffer mapAsync readbacks!)
         session.step_gaussian_fast(lrGaussian);
         session.step_nerf_fast(lrNerf);
@@ -632,6 +612,7 @@ async function trainingLoop() {
         requestAnimationFrame(() => trainingLoop());
     }
 }
+
 
 // Automated 1-Click NeRF-Guided Seeding Pipeline
 async function runOneClickHybridPipeline() {
