@@ -511,7 +511,7 @@ function clearCanvas(canvas) {
 async function toggleTraining() {
     if (isTraining) {
         isTraining = false;
-        btnTrain.textContent = '▶ Start Multi-View Fitting';
+        btnTrain.textContent = '▶ Continue Fitting';
         btnTrain.classList.remove('btn-stop');
         console.log(`[System] Multi-View Training paused at Step ${lossHistoryGaussian.length}.`);
         if (session) {
@@ -576,10 +576,11 @@ async function trainingLoop() {
     } catch (e) {
         console.error("Error during training step:", e);
         isTraining = false;
-        btnTrain.textContent = '▶ Start Multi-View Fitting';
+        btnTrain.textContent = '▶ Continue Fitting';
         btnTrain.classList.remove('btn-stop');
         return;
     }
+
 
     // Micro-yield execution to browser event loop
     await new Promise(resolve => setTimeout(resolve, 2));
