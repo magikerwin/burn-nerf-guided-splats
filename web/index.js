@@ -35,13 +35,19 @@ let session = null;
 let isTraining = false;
 let width = 128;
 let height = 128;
-let targetRgb = new Uint8Array(width * height * 3);
+let targetRgb0 = new Uint8Array(width * height * 3);
+let targetRgb1 = new Uint8Array(width * height * 3);
+let currentViewV = 0.5; // View interpolation parameter in [0.0, 1.0]
+
 let lossHistoryGaussian = [];
 let lossHistoryNerf = [];
 
 // DOM Elements
 const selectImg = document.getElementById('image-select');
-const uploadInput = document.getElementById('image-upload');
+const customUploadContainer = document.getElementById('custom-upload-container');
+const uploadInput0 = document.getElementById('image-upload-0');
+const uploadInput1 = document.getElementById('image-upload-1');
+
 const numGaussiansInput = document.getElementById('num-gaussians');
 const lrGaussianInput = document.getElementById('lr-gaussian');
 const lrNerfInput = document.getElementById('lr-nerf');
@@ -49,6 +55,9 @@ const btnTrain = document.getElementById('btn-train');
 const btnReset = document.getElementById('btn-reset');
 const btnPretrain = document.getElementById('btn-nerf-pretrain');
 const btnSeed = document.getElementById('btn-seed');
+
+const viewSlider = document.getElementById('view-slider');
+const viewAngleText = document.getElementById('view-angle-text');
 
 const canvasTarget = document.getElementById('canvas-target');
 const canvasGaussian = document.getElementById('canvas-gaussian');
@@ -74,88 +83,149 @@ async function start() {
     // Initialize WebGPU context asynchronously first
     await init_webgpu();
     
-    // Set up default synthetic target image
-    generateSyntheticTarget();
+    // Set up default synthetic target views
+    generateSyntheticTargets();
     resetSession();
     
     // Wire up events
     selectImg.addEventListener('change', handleImageSelect);
-    uploadInput.addEventListener('change', handleImageUpload);
+    if (uploadInput0) uploadInput0.addEventListener('change', () => handleCustomUpload(0));
+    if (uploadInput1) uploadInput1.addEventListener('change', () => handleCustomUpload(1));
+
     btnTrain.addEventListener('click', toggleTraining);
     btnReset.addEventListener('click', resetSession);
+    viewSlider.addEventListener('input', handleViewSliderInput);
     blendSlider.addEventListener('input', updateBlendCanvas);
     btnPretrain.addEventListener('click', runNeRFPretraining);
     btnSeed.addEventListener('click', seedGaussiansFromEdges);
 }
 
-// Generate default target image: red circle on dark blue background
-function generateSyntheticTarget() {
-    const ctx = canvasTarget.getContext('2d');
-    ctx.fillStyle = '#000080'; // Blue
-    ctx.fillRect(0, 0, width, height);
+// Generate default synthetic targets: View 0 (Circle at 0°) and View 1 (Rotated/Displaced at 30°)
+function generateSyntheticTargets() {
+    // View 0 (0 deg): Red circle in center
+    const canvas0 = document.createElement('canvas');
+    canvas0.width = width;
+    canvas0.height = height;
+    const ctx0 = canvas0.getContext('2d');
+    ctx0.fillStyle = '#000080'; // Dark Blue background
+    ctx0.fillRect(0, 0, width, height);
+    ctx0.beginPath();
+    ctx0.arc(width * 0.5, height * 0.5, width * 0.35, 0, 2 * Math.PI);
+    ctx0.fillStyle = '#ff0000'; // Red
+    ctx0.fill();
 
-    ctx.beginPath();
-    ctx.arc(width / 2, height / 2, width * 0.35, 0, 2 * Math.PI);
-    ctx.fillStyle = '#ff0000'; // Red
-    ctx.fill();
-
-    // Cache target pixels
-    const imgData = ctx.getImageData(0, 0, width, height);
+    const imgData0 = ctx0.getImageData(0, 0, width, height);
     let idx = 0;
-    for (let i = 0; i < imgData.data.length; i += 4) {
-        targetRgb[idx++] = imgData.data[i];     // R
-        targetRgb[idx++] = imgData.data[i + 1]; // G
-        targetRgb[idx++] = imgData.data[i + 2]; // B
+    for (let i = 0; i < imgData0.data.length; i += 4) {
+        targetRgb0[idx++] = imgData0.data[i];
+        targetRgb0[idx++] = imgData0.data[i + 1];
+        targetRgb0[idx++] = imgData0.data[i + 2];
     }
+
+    // View 1 (30 deg): Skewed/Shifted Red circle (simulating 30 degree rotated camera view)
+    const canvas1 = document.createElement('canvas');
+    canvas1.width = width;
+    canvas1.height = height;
+    const ctx1 = canvas1.getContext('2d');
+    ctx1.fillStyle = '#000080';
+    ctx1.fillRect(0, 0, width, height);
+    ctx1.beginPath();
+    ctx1.ellipse(width * 0.58, height * 0.5, width * 0.28, width * 0.35, Math.PI / 12, 0, 2 * Math.PI);
+    ctx1.fillStyle = '#ff0000';
+    ctx1.fill();
+
+    const imgData1 = ctx1.getImageData(0, 0, width, height);
+    idx = 0;
+    for (let i = 0; i < imgData1.data.length; i += 4) {
+        targetRgb1[idx++] = imgData1.data[i];
+        targetRgb1[idx++] = imgData1.data[i + 1];
+        targetRgb1[idx++] = imgData1.data[i + 2];
+    }
+
+    renderTargetViewBlend();
+}
+
+// Render blended Ground Truth view based on current view slider parameter
+function renderTargetViewBlend() {
+    const ctx = canvasTarget.getContext('2d');
+    const imgData = ctx.createImageData(width, height);
+    const v = currentViewV;
+
+    let srcIdx = 0;
+    for (let i = 0; i < imgData.data.length; i += 4) {
+        imgData.data[i] = (1 - v) * targetRgb0[srcIdx] + v * targetRgb1[srcIdx];
+        imgData.data[i + 1] = (1 - v) * targetRgb0[srcIdx + 1] + v * targetRgb1[srcIdx + 1];
+        imgData.data[i + 2] = (1 - v) * targetRgb0[srcIdx + 2] + v * targetRgb1[srcIdx + 2];
+        imgData.data[i + 3] = 255;
+        srcIdx += 3;
+    }
+    ctx.putImageData(imgData, 0, 0);
 }
 
 // Handle image selection dropdown
 function handleImageSelect() {
     if (selectImg.value === 'synthetic') {
-        uploadInput.classList.add('hidden');
-        generateSyntheticTarget();
+        if (customUploadContainer) customUploadContainer.classList.add('hidden');
+        generateSyntheticTargets();
         resetSession();
     } else if (selectImg.value === 'upload') {
-        uploadInput.classList.remove('hidden');
-        uploadInput.click();
+        if (customUploadContainer) customUploadContainer.classList.remove('hidden');
     }
 }
 
-// Handle local custom image upload
-function handleImageUpload(e) {
-    const file = e.target.files[0];
+// Handle custom dual-view file upload
+function handleCustomUpload(viewIndex) {
+    const fileInput = viewIndex === 0 ? uploadInput0 : uploadInput1;
+    const file = fileInput.files[0];
     if (!file) return;
 
     const img = new Image();
     img.onload = () => {
-        const ctx = canvasTarget.getContext('2d');
-        // Clear and draw resized custom image
-        ctx.clearRect(0, 0, width, height);
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = width;
+        tempCanvas.height = height;
+        const ctx = tempCanvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
 
-        // Read pixels
         const imgData = ctx.getImageData(0, 0, width, height);
+        const targetArr = viewIndex === 0 ? targetRgb0 : targetRgb1;
         let idx = 0;
         for (let i = 0; i < imgData.data.length; i += 4) {
-            targetRgb[idx++] = imgData.data[i];
-            targetRgb[idx++] = imgData.data[i + 1];
-            targetRgb[idx++] = imgData.data[i + 2];
+            targetArr[idx++] = imgData.data[i];
+            targetArr[idx++] = imgData.data[i + 1];
+            targetArr[idx++] = imgData.data[i + 2];
         }
+        renderTargetViewBlend();
         resetSession();
     };
     img.src = URL.createObjectURL(file);
 }
 
+// Handle view interpolation slider movement
+async function handleViewSliderInput() {
+    currentViewV = parseFloat(viewSlider.value);
+    const angleDeg = (currentViewV * 30).toFixed(0);
+    viewAngleText.textContent = `Angle: ${angleDeg}° (v = ${currentViewV.toFixed(2)})`;
+
+    renderTargetViewBlend();
+
+    if (session) {
+        renderModelOutput(canvasGaussian, await session.get_gaussian_render_view(currentViewV));
+        renderModelOutput(canvasNerf, await session.get_nerf_render_view(currentViewV));
+        updateBlendCanvas();
+    }
+}
+
 // Reset models and clear graphs
 function resetSession() {
     isTraining = false;
-    btnTrain.textContent = 'Start Training';
+    btnTrain.textContent = 'Start Multi-View Fitting';
     btnTrain.classList.remove('btn-stop');
 
     btnPretrain.disabled = false;
     btnPretrain.textContent = '1. Pre-train NeRF (50 Steps)';
     btnSeed.disabled = true;
-    btnSeed.textContent = '2. Initialize GS on Edges';
+    btnSeed.textContent = '2. Initialize 3D GS on Edges';
 
     // Reset pipeline step cards UI
     step1Card.className = 'pipeline-step active';
@@ -165,9 +235,9 @@ function resetSession() {
 
     const numGaussians = parseInt(numGaussiansInput.value) || 500;
     
-    // Create new session in Rust WASM
-    session = new WasmTrainingSession(width, height, numGaussians, targetRgb);
-    console.log(`[System] Initialized new session with ${numGaussians} Gaussians.`);
+    // Create new multi-view session in Rust WASM
+    session = new WasmTrainingSession(width, height, numGaussians, targetRgb0, targetRgb1);
+    console.log(`[System] Initialized new Multi-View session with ${numGaussians} 3D Gaussians.`);
 
     lossHistoryGaussian = [];
     lossHistoryNerf = [];
@@ -192,16 +262,16 @@ function clearCanvas(canvas) {
 function toggleTraining() {
     if (isTraining) {
         isTraining = false;
-        btnTrain.textContent = 'Start Training';
+        btnTrain.textContent = 'Start Multi-View Fitting';
         btnTrain.classList.remove('btn-stop');
-        console.log(`[System] Training paused at Step ${lossHistoryGaussian.length}.`);
+        console.log(`[System] Multi-View Training paused at Step ${lossHistoryGaussian.length}.`);
     } else {
         isTraining = true;
         btnTrain.textContent = 'Pause Training';
         btnTrain.classList.add('btn-stop');
         const lrGaussian = parseFloat(lrGaussianInput.value) || 0.005;
         const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
-        console.log(`[System] Starting training loop. LR: Explicit GS = ${lrGaussian}, Implicit NeRF = ${lrNerf}`);
+        console.log(`[System] Starting Multi-View optimization. LR: Explicit GS = ${lrGaussian}, Implicit NeRF = ${lrNerf}`);
         requestAnimationFrame(trainingLoop);
     }
 }
@@ -214,19 +284,19 @@ async function trainingLoop() {
     const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
 
     try {
-        // 1. Step the Gaussian Splatting model
+        // 1. Step the Gaussian Splatting model jointly over View 0 and View 1
         const lossG = await session.step_gaussian(lrGaussian);
         lossHistoryGaussian.push(lossG);
         labelLossGaussian.textContent = `Loss: ${lossG.toFixed(5)}`;
 
-        // 2. Step the NeRF MLP model
+        // 2. Step the view-conditioned NeRF MLP model jointly over View 0 and View 1
         const lossN = await session.step_nerf(lrNerf);
         lossHistoryNerf.push(lossN);
         labelLossNerf.textContent = `Loss: ${lossN.toFixed(5)}`;
 
-        // Render results
-        renderModelOutput(canvasGaussian, await session.get_gaussian_render());
-        renderModelOutput(canvasNerf, await session.get_nerf_render());
+        // Render results at current view interpolation parameter v
+        renderModelOutput(canvasGaussian, await session.get_gaussian_render_view(currentViewV));
+        renderModelOutput(canvasNerf, await session.get_nerf_render_view(currentViewV));
 
         // Update blended view & line chart
         updateBlendCanvas();
@@ -234,12 +304,12 @@ async function trainingLoop() {
 
         // Periodically log progress to developer console
         if (lossHistoryGaussian.length % 50 === 0) {
-            console.log(`[Step ${lossHistoryGaussian.length}] GS Loss: ${lossG.toFixed(5)} | NeRF Loss: ${lossN.toFixed(5)}`);
+            console.log(`[Step ${lossHistoryGaussian.length}] GS Multi-View Loss: ${lossG.toFixed(5)} | NeRF Multi-View Loss: ${lossN.toFixed(5)}`);
         }
     } catch (e) {
         console.error("Error during training step:", e);
         isTraining = false;
-        btnTrain.textContent = 'Start Training';
+        btnTrain.textContent = 'Start Multi-View Fitting';
         btnTrain.classList.remove('btn-stop');
         return;
     }
@@ -250,23 +320,23 @@ async function trainingLoop() {
     }
 }
 
-// Pre-train NeRF to capture coarse edges
+// Pre-train NeRF to capture coarse multi-view edges
 async function runNeRFPretraining() {
     isTraining = false;
-    btnTrain.textContent = 'Start Training';
+    btnTrain.textContent = 'Start Multi-View Fitting';
     btnTrain.classList.remove('btn-stop');
     
     btnPretrain.disabled = true;
-    btnPretrain.textContent = 'Training NeRF...';
+    btnPretrain.textContent = 'Training Multi-View NeRF...';
     
     step1Status.textContent = '⏳';
     
     const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
-    console.log("[System] Starting NeRF pre-training for 50 steps to extract spatial gradient importance map...");
+    console.log("[System] Starting Multi-View NeRF pre-training for 50 steps...");
     
     try {
         let finalLoss = 0.0;
-        // Train for 50 steps
+        // Train for 50 steps across both views
         for (let step = 1; step <= 50; step++) {
             const lossN = await session.step_nerf(lrNerf);
             lossHistoryNerf.push(lossN);
@@ -274,9 +344,8 @@ async function runNeRFPretraining() {
             finalLoss = lossN;
             
             if (step % 5 === 0 || step === 50) {
-                renderModelOutput(canvasNerf, await session.get_nerf_render());
+                renderModelOutput(canvasNerf, await session.get_nerf_render_view(currentViewV));
                 drawLossChart();
-                // Yield to main thread to keep browser UI responsive
                 await new Promise(resolve => setTimeout(resolve, 10));
             }
         }
@@ -288,12 +357,10 @@ async function runNeRFPretraining() {
         step1Status.textContent = '✅';
         step2Card.className = 'pipeline-step active';
         
-        console.log(`[System] NeRF pre-training complete. Final NeRF Loss: ${finalLoss.toFixed(5)}`);
+        console.log(`[System] Multi-view NeRF pre-training complete. Final Loss: ${finalLoss.toFixed(5)}`);
         
-        // Fetch and draw importance map to the Blend canvas so the user can see it!
-        console.log("[System] Extracting spatial gradient importance map from implicit network...");
+        console.log("[System] Extracting multi-view spatial gradient importance map...");
         const importanceData = await session.get_nerf_importance_map();
-        // The importance map dimension is (width - 1) x (height - 1) = 127 x 127
         renderGrayscaleOutput(canvasBlend, importanceData, width - 1, height - 1);
         
         btnSeed.disabled = false;
@@ -305,35 +372,34 @@ async function runNeRFPretraining() {
     }
 }
 
-// Seed Gaussians proportional to NeRF's spatial gradient
+// Seed 3D Gaussians proportional to NeRF's spatial gradient across views
 async function seedGaussiansFromEdges() {
     btnSeed.disabled = true;
     btnSeed.textContent = 'Seeding...';
     step2Status.textContent = '⏳';
-    console.log("[System] Seeding Gaussians on high-frequency edges...");
+    console.log("[System] Seeding 3D Gaussians on multi-view high-frequency edges...");
     try {
         await session.seed_from_nerf();
-        // Render the initial state of the seeded Gaussians (should align to edges!)
-        renderModelOutput(canvasGaussian, await session.get_gaussian_render());
+        renderModelOutput(canvasGaussian, await session.get_gaussian_render_view(currentViewV));
         btnSeed.textContent = 'Gaussians Seeded!';
         btnSeed.disabled = true;
         
         step2Card.className = 'pipeline-step completed';
         step2Status.textContent = '✅';
         
-        console.log("[System] Guided seeding complete! Re-initialized 500 Gaussians directly along circle boundaries.");
+        console.log("[System] Guided seeding complete! Initialized 3D Gaussians directly along multi-view boundaries.");
 
-        // Reset loss histories for fresh chart tracking
         lossHistoryGaussian = [];
         lossHistoryNerf = [];
         drawLossChart();
     } catch (e) {
         console.error("Error during guided seeding:", e);
         btnSeed.disabled = false;
-        btnSeed.textContent = '2. Initialize GS on Edges';
+        btnSeed.textContent = '2. Initialize 3D GS on Edges';
         step2Status.textContent = '❌';
     }
 }
+
 
 // Render raw RGB data from Rust onto Web Canvas
 function renderModelOutput(canvas, rgbData) {
