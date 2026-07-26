@@ -31,10 +31,34 @@ console.error = function(...args) {
     logToTerminal(args.join(' '), 'error');
 };
 
+// Bulletproof Single-Threaded GPU Task Queue to eliminate WebGPU race conditions forever
+class GpuTaskQueue {
+    constructor() {
+        this.promiseChain = Promise.resolve();
+    }
+
+    // Serializes GPU tasks so at most ONE WebGPU mapAsync/step executes at a time
+    async run(taskFn) {
+        const nextPromise = this.promiseChain.then(async () => {
+            try {
+                return await taskFn();
+            } catch (err) {
+                console.error("GPU Task Error:", err);
+                throw err;
+            }
+        });
+        this.promiseChain = nextPromise.catch(() => {});
+        return nextPromise;
+    }
+}
+
+const gpuQueue = new GpuTaskQueue();
+
 let session = null;
 let isTraining = false;
 let isAutoPlaying = false;
 let autoPlayDirection = 1;
+
 
 let width = 64;  // Default low-resolution 64x64 for fast responsiveness
 let height = 64;
@@ -365,8 +389,6 @@ function handleImageSelect() {
         resetSession();
     }
 }
-
-
 // Handle view interpolation slider movement
 async function handleViewSliderInput() {
     currentViewV = parseFloat(viewSlider.value);
@@ -376,9 +398,13 @@ async function handleViewSliderInput() {
     renderTargetViewBlend();
 
     if (session) {
-        renderModelOutput(canvasGaussian, await session.get_gaussian_render_view(currentViewV));
-        renderModelOutput(canvasNerf, await session.get_nerf_render_view(currentViewV));
-        updateBlendCanvas();
+        await gpuQueue.run(async () => {
+            const rgbG = await session.get_gaussian_render_view(currentViewV);
+            const rgbN = await session.get_nerf_render_view(currentViewV);
+            renderModelOutput(canvasGaussian, rgbG);
+            renderModelOutput(canvasNerf, rgbN);
+            updateBlendCanvas();
+        });
     }
 }
 
@@ -472,9 +498,13 @@ async function toggleTraining() {
         btnTrain.classList.remove('btn-stop');
         console.log(`[System] Multi-View Training paused at Step ${lossHistoryGaussian.length}.`);
         if (session) {
-            renderModelOutput(canvasGaussian, await session.get_gaussian_render_view(currentViewV));
-            renderModelOutput(canvasNerf, await session.get_nerf_render_view(currentViewV));
-            updateBlendCanvas();
+            await gpuQueue.run(async () => {
+                const rgbG = await session.get_gaussian_render_view(currentViewV);
+                const rgbN = await session.get_nerf_render_view(currentViewV);
+                renderModelOutput(canvasGaussian, rgbG);
+                renderModelOutput(canvasNerf, rgbN);
+                updateBlendCanvas();
+            });
         }
     } else {
         isTraining = true;
@@ -487,7 +517,6 @@ async function toggleTraining() {
     }
 }
 
-
 // Core animation and optimization loop
 async function trainingLoop() {
     if (!isTraining || !session) return;
@@ -496,30 +525,36 @@ async function trainingLoop() {
     const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
 
     try {
-        // 1. Step the Gaussian Splatting model jointly over keyframe views
-        const lossG = await session.step_gaussian(lrGaussian);
-        lossHistoryGaussian.push(lossG);
-        labelLossGaussian.textContent = `Loss: ${lossG.toFixed(5)}`;
+        await gpuQueue.run(async () => {
+            if (!isTraining || !session) return;
 
-        // 2. Step the view-conditioned NeRF MLP model jointly over keyframe views
-        const lossN = await session.step_nerf(lrNerf);
-        lossHistoryNerf.push(lossN);
-        labelLossNerf.textContent = `Loss: ${lossN.toFixed(5)}`;
+            // 1. Step the Gaussian Splatting model jointly over keyframe views
+            const lossG = await session.step_gaussian(lrGaussian);
+            lossHistoryGaussian.push(lossG);
+            labelLossGaussian.textContent = `Loss: ${lossG.toFixed(5)}`;
 
-        const stepCount = lossHistoryGaussian.length;
+            // 2. Step the view-conditioned NeRF MLP model jointly over keyframe views
+            const lossN = await session.step_nerf(lrNerf);
+            lossHistoryNerf.push(lossN);
+            labelLossNerf.textContent = `Loss: ${lossN.toFixed(5)}`;
 
-        // Render canvases every 5 steps to eliminate WebGPU buffer mapAsync contention
-        if (stepCount % 5 === 0 || stepCount === 1) {
-            renderModelOutput(canvasGaussian, await session.get_gaussian_render_view(currentViewV));
-            renderModelOutput(canvasNerf, await session.get_nerf_render_view(currentViewV));
-            updateBlendCanvas();
-            drawLossChart();
-        }
+            const stepCount = lossHistoryGaussian.length;
 
-        // Periodically log progress to developer console
-        if (stepCount % 50 === 0) {
-            console.log(`[Step ${stepCount}] GS Multi-View Loss: ${lossG.toFixed(5)} | NeRF Multi-View Loss: ${lossN.toFixed(5)}`);
-        }
+            // Render canvases every 5 steps
+            if (stepCount % 5 === 0 || stepCount === 1) {
+                const rgbG = await session.get_gaussian_render_view(currentViewV);
+                const rgbN = await session.get_nerf_render_view(currentViewV);
+                renderModelOutput(canvasGaussian, rgbG);
+                renderModelOutput(canvasNerf, rgbN);
+                updateBlendCanvas();
+                drawLossChart();
+            }
+
+            // Log progress
+            if (stepCount % 50 === 0) {
+                console.log(`[Step ${stepCount}] GS Multi-View Loss: ${lossG.toFixed(5)} | NeRF Multi-View Loss: ${lossN.toFixed(5)}`);
+            }
+        });
     } catch (e) {
         console.error("Error during training step:", e);
         isTraining = false;
@@ -528,7 +563,7 @@ async function trainingLoop() {
         return;
     }
 
-    // Yield control back to browser event loop to flush WebGPU memory buffers
+    // Yield control back to browser event loop
     await new Promise(resolve => setTimeout(resolve, 4));
 
     // Loop next step
@@ -536,7 +571,6 @@ async function trainingLoop() {
         requestAnimationFrame(() => trainingLoop());
     }
 }
-
 
 // Pre-train NeRF to capture coarse multi-view edges
 async function runNeRFPretraining() {
@@ -551,14 +585,18 @@ async function runNeRFPretraining() {
     console.log("[Pipeline] Starting Step 1: Pre-training Implicit NeRF for 50 steps...");
 
     for (let i = 1; i <= 50; i++) {
-        const lossN = await session.step_nerf(lrNerf);
-        lossHistoryNerf.push(lossN);
-        labelLossNerf.textContent = `Loss: ${lossN.toFixed(5)}`;
+        await gpuQueue.run(async () => {
+            const lossN = await session.step_nerf(lrNerf);
+            lossHistoryNerf.push(lossN);
+            labelLossNerf.textContent = `Loss: ${lossN.toFixed(5)}`;
 
-        if (i % 10 === 0) {
-            renderModelOutput(canvasNerf, await session.get_nerf_render_view(currentViewV));
-            drawLossChart();
-        }
+            if (i % 10 === 0) {
+                const rgbN = await session.get_nerf_render_view(currentViewV);
+                renderModelOutput(canvasNerf, rgbN);
+                drawLossChart();
+            }
+        });
+        await new Promise(resolve => setTimeout(resolve, 2));
     }
 
     console.log("[Pipeline] Step 1 Complete! NeRF spatial gradients extracted across views.");
@@ -575,12 +613,16 @@ async function seedGaussiansFromEdges() {
     btnSeed.textContent = 'Seeding 3D Gaussians...';
     console.log("[Pipeline] Starting Step 2: Sampling 3D Gaussian centers along multi-view spatial boundaries...");
 
-    await session.seed_from_nerf();
+    await gpuQueue.run(async () => {
+        await session.seed_from_nerf();
+        const rgbG = await session.get_gaussian_render_view(currentViewV);
+        renderModelOutput(canvasGaussian, rgbG);
+    });
 
-    renderModelOutput(canvasGaussian, await session.get_gaussian_render_view(currentViewV));
     console.log("[Pipeline] Step 2 Complete! 3D Gaussians initialized accurately along object boundaries.");
     btnSeed.textContent = '✓ 2. 3D GS Initialized';
 }
+
 
 // Helper: Render WASM RGB u8 array to canvas
 function renderModelOutput(canvas, rgbArray) {
