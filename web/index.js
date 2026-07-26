@@ -80,7 +80,9 @@ const uploadInputMulti = document.getElementById('image-upload-multi');
 const numGaussiansInput = document.getElementById('num-gaussians');
 const lrGaussianInput = document.getElementById('lr-gaussian');
 const lrNerfInput = document.getElementById('lr-nerf');
+const nerfSeedItersInput = document.getElementById('nerf-seed-iters');
 const chkNerfGuided = document.getElementById('chk-nerf-guided');
+
 const btnTrain = document.getElementById('btn-train');
 const btnReset = document.getElementById('btn-reset');
 
@@ -559,11 +561,13 @@ async function toggleTraining() {
             btnTrain.disabled = true;
             btnTrain.textContent = '⏳ NeRF Guided Seeding...';
             const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
-            console.log("[Pipeline] 🎓 NeRF-Guided Seeding: Pre-training Implicit NeRF for 200 steps...");
+            const seedIters = Math.max(50, parseInt(nerfSeedItersInput ? nerfSeedItersInput.value : 500) || 500);
+            console.log(`[Pipeline] 🎓 NeRF-Guided Seeding: Pre-training Implicit NeRF for ${seedIters} steps...`);
 
-            for (let i = 1; i <= 200; i++) {
+            for (let i = 1; i <= seedIters; i++) {
                 session.step_nerf_fast(lrNerf);
-                if (i % 25 === 0) {
+                const reportEvery = Math.max(25, Math.floor(seedIters / 8));
+                if (i % reportEvery === 0) {
                     await gpuQueue.run(async () => {
                         const losses = await session.get_losses();
                         labelLossNerf.textContent = `Loss: ${losses[1].toFixed(5)}`;
@@ -571,7 +575,8 @@ async function toggleTraining() {
                         renderModelOutput(canvasNerf, rgbN);
                         drawLossChart();
                     });
-                    console.log(`[Pipeline] 🎓 NeRF pre-training: Step ${i}/200...`);
+                    console.log(`[Pipeline] 🎓 NeRF pre-training: Step ${i}/${seedIters}...`);
+                    btnTrain.textContent = `⏳ NeRF Seeding ${Math.round(i/seedIters*100)}%`;
                 }
                 await new Promise(resolve => setTimeout(resolve, 1));
             }
