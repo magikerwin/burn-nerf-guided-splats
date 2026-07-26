@@ -471,8 +471,12 @@ async function resetSession() {
     // Serialize new WASM session creation through gpuQueue to let previous WGPU buffers unmap cleanly
     await gpuQueue.run(async () => {
         session = create_multiframe_session(width, height, numGaussians, flatConcat, numFrames);
-        console.log(`[System] Initialized Multi-Frame session at ${width}x${height} grid with ${numGaussians} 3D Gaussians across ${numFrames} keyframe views.`);
+        // Pre-compile WGSL compute shader pipelines asynchronously so Start Fitting responds instantly
+        session.step_gaussian_fast(0.0);
+        session.step_nerf_fast(0.0);
+        console.log(`[System] Initialized & Warmed up Multi-Frame session at ${width}x${height} grid with ${numGaussians} 3D Gaussians across ${numFrames} keyframe views.`);
     });
+
 
     lossHistoryGaussian = [];
     lossHistoryNerf = [];
