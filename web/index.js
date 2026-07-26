@@ -314,11 +314,15 @@ async function trainingLoop() {
         return;
     }
 
-    // Loop
+    // Yield control back to browser event loop to prevent WebGPU backpressure stall
+    await new Promise(resolve => setTimeout(resolve, 1));
+
+    // Loop next step
     if (isTraining) {
         requestAnimationFrame(() => trainingLoop());
     }
 }
+
 
 // Pre-train NeRF to capture coarse multi-view edges
 async function runNeRFPretraining() {
