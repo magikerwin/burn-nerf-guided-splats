@@ -52,7 +52,7 @@ pub fn seed_gaussians_from_importance<B: Backend>(
     let sum: f32 = importance_data.iter().sum();
     let mut rng = rand::thread_rng();
     
-    let mut sampled_means = Vec::with_capacity(num_gaussians * 2);
+    let mut sampled_means = Vec::with_capacity(num_gaussians * 3);
     let mut sampled_colors = Vec::with_capacity(num_gaussians * 3);
     let mut sampled_scales = Vec::with_capacity(num_gaussians * 2);
 
@@ -94,8 +94,11 @@ pub fn seed_gaussians_from_importance<B: Backend>(
             (row, col, x, y)
         };
 
+        let z: f32 = rng.r#gen(); // Initial depth z in [0, 1]
+
         sampled_means.push(x);
         sampled_means.push(y);
+        sampled_means.push(z);
 
         // Extract RGB color at pixel coordinate from NeRF rendered image
         let pix_idx = (row * w + col) * 3;
@@ -104,7 +107,6 @@ pub fn seed_gaussians_from_importance<B: Backend>(
         let b_val = nerf_render_rgb.get(pix_idx + 2).copied().unwrap_or(0.5);
 
         // Inverse sigmoid logit transformation for pre-sigmoid colors: logit(p) = ln(p / (1 - p))
-        // Ensures that when Gaussian model renders sigmoid(logit), it reproduces NeRF's RGB color.
         let logit = |p: f32| {
             let p_clamped = p.clamp(0.01, 0.99);
             (p_clamped / (1.0 - p_clamped)).ln()
@@ -127,7 +129,7 @@ pub fn seed_gaussians_from_importance<B: Backend>(
     let mut model = GaussianModel::<B>::new(num_gaussians, device);
 
     // Overwrite parameters with sampled initial values
-    let means_tensor = Tensor::<B, 2>::from_data(burn::tensor::TensorData::new(sampled_means, [num_gaussians, 2]), device);
+    let means_tensor = Tensor::<B, 2>::from_data(burn::tensor::TensorData::new(sampled_means, [num_gaussians, 3]), device);
     let colors_tensor = Tensor::<B, 2>::from_data(burn::tensor::TensorData::new(sampled_colors, [num_gaussians, 3]), device);
     let scales_tensor = Tensor::<B, 2>::from_data(burn::tensor::TensorData::new(sampled_scales, [num_gaussians, 2]), device);
 
@@ -159,7 +161,6 @@ mod tests {
 
         assert_eq!(importance.shape().dims::<3>(), [3, 3, 1]);
         
-        // Check that the middle column (index 1) has high gradient magnitude due to the transition from 0 to 1
         let vec = importance.into_data().into_vec::<f32>().unwrap();
         assert!(vec[1] > 0.9);
         assert!(vec[0] < 0.1);
@@ -168,7 +169,6 @@ mod tests {
     #[test]
     fn test_seed_gaussians_from_importance() {
         let device = Default::default();
-        // Create a simple 2x2 gradient map where only the bottom-right pixel has a gradient
         let importance_data = vec![
             0.0,
             0.0,
@@ -188,16 +188,15 @@ mod tests {
         let means = model.means.val().into_data().into_vec::<f32>().unwrap();
         let colors = model.colors.val().into_data().into_vec::<f32>().unwrap();
 
-        // The first 70 Gaussians are edge-sampled (index 3: bottom-right, x=0.75, y=0.75)
         for i in 0..70 {
-            let x = means[i * 2];
-            let y = means[i * 2 + 1];
+            let x = means[i * 3];
+            let y = means[i * 3 + 1];
             assert!((x - 0.75).abs() < 1e-4);
             assert!((y - 0.75).abs() < 1e-4);
 
-            // Red channel pre-sigmoid logit of 1.0 (clamped to 0.99) should be positive
             let r_logit = colors[i * 3];
             assert!(r_logit > 0.0);
         }
     }
 }
+
