@@ -1,4 +1,5 @@
-import init, { WasmTrainingSession, create_multiframe_session, init_panic_hook } from './pkg/burn_nerf_guided_splats.js';
+import init, { WasmTrainingSession, create_multiframe_session, init_panic_hook, init_webgpu } from './pkg/burn_nerf_guided_splats.js';
+
 
 
 // Redirect Console output to HTML developer console
@@ -135,7 +136,11 @@ async function start() {
     await init();
     init_panic_hook();
     
+    // Initialize Burn WGPU WebGPU device context
+    await init_webgpu();
+    
     updateCanvasDimensions();
+
 
     // Set up default synthetic target views
     generateSyntheticTargets();
@@ -521,7 +526,6 @@ const chkNerfGuided = document.getElementById('chk-nerf-guided');
 
 // Training toggle
 async function toggleTraining() {
-
     if (!session) {
         console.warn("[System] Session is still initializing, please wait...");
         return;
@@ -533,6 +537,35 @@ async function toggleTraining() {
         btnTrain.classList.remove('btn-stop');
         console.log(`[System] Multi-View Training paused at Step ${lossHistoryGaussian.length}.`);
     } else {
+        // Run NeRF-Guided Seeding on first launch if toggle is checked
+        if (chkNerfGuided && chkNerfGuided.checked && lossHistoryGaussian.length === 0) {
+            btnTrain.disabled = true;
+            btnTrain.textContent = '⏳ NeRF Guided Seeding...';
+            const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
+            console.log("[Pipeline] 🎓 NeRF-Guided Seeding: Pre-training Implicit NeRF for 50 steps...");
+
+            for (let i = 1; i <= 50; i++) {
+                session.step_nerf_fast(lrNerf);
+                if (i % 10 === 0) {
+                    await gpuQueue.run(async () => {
+                        const losses = await session.get_losses();
+                        labelLossNerf.textContent = `Loss: ${losses[1].toFixed(5)}`;
+                        const rgbN = await session.get_nerf_render_view(currentViewV);
+                        renderModelOutput(canvasNerf, rgbN);
+                    });
+                }
+                await new Promise(resolve => setTimeout(resolve, 2));
+            }
+
+            console.log("[Pipeline] 🎓 NeRF-Guided Seeding: Seeding 3D Gaussians along NeRF spatial gradients...");
+            await gpuQueue.run(async () => {
+                await session.seed_from_nerf();
+                const rgbG = await session.get_gaussian_render_view(currentViewV);
+                renderModelOutput(canvasGaussian, rgbG);
+            });
+            btnTrain.disabled = false;
+        }
+
         isTraining = true;
         btnTrain.textContent = '⏸ Pause Fitting';
         btnTrain.classList.add('btn-stop');
@@ -542,6 +575,7 @@ async function toggleTraining() {
         requestAnimationFrame(trainingLoop);
     }
 }
+
 
 let stepCounter = 0;
 
@@ -664,10 +698,9 @@ async function runOneClickHybridPipeline() {
     }
     console.log("[Hybrid Pipeline] Pipeline Complete! 3D Gaussians initialized accurately along object boundaries.");
 }
-ng object boundaries.");
-}
 
 // Pre-train NeRF to capture coarse multi-view edges
+
 async function runNeRFPretraining() {
     isTraining = false;
     btnTrain.textContent = '▶ Start Multi-View Fitting';

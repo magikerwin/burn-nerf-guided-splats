@@ -249,6 +249,7 @@ pub fn init_panic_hook() {
     console_error_panic_hook::set_once();
 }
 
+/// Asynchronously initializes Burn WGPU WebGPU device context for WASM.
 #[wasm_bindgen]
 pub async fn init_webgpu() {
     let device = Default::default();
@@ -258,4 +259,6 @@ pub async fn init_webgpu() {
     )
     .await;
 }
+
+
 
