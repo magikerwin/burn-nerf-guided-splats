@@ -793,8 +793,9 @@ function drawLossChart() {
         ctx.stroke();
     };
 
-    drawLine(lossHistoryGaussian, '#ec4899'); // Y2K Pink for GS
-    drawLine(lossHistoryNerf, '#9333ea');     // Y2K Purple for NeRF
+    drawLine(lossHistoryGaussian, '#ec4899'); // Hot Pink for GS
+    drawLine(lossHistoryNerf, '#9333ea');     // Cyber Purple for NeRF
+
 }
 
 
