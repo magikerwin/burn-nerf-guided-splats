@@ -514,4 +514,13 @@ function drawLossChart() {
     drawLine(lossHistoryNerf, '#a78bfa');
 }
 
-start();
+start().catch(err => {
+    console.error("[Initialization Error] Failed to start WASM/WebGPU session:", err);
+    
+    // Check if running directly over file:// protocol
+    if (window.location.protocol === 'file:') {
+        console.error("[CORS Warning] Browsers block WebAssembly module loading over file:// protocol. Please serve the 'web' folder via HTTP (e.g. using a local server like python -m http.server 8000).");
+        alert("⚠️ Local File Access Notice:\n\nBrowsers restrict WebAssembly and ES modules when opening HTML directly over file:// scheme.\n\nPlease serve the 'web' directory over HTTP (e.g., using python -m http.server 8000 or basic-http-server web) and open http://localhost:8000.");
+    }
+});
+
