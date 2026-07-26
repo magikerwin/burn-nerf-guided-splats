@@ -572,16 +572,24 @@ async function toggleTraining() {
         const lrGaussian = parseFloat(lrGaussianInput.value) || 0.005;
         const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
         console.log(`[System] Starting Multi-View optimization. LR: Explicit GS = ${lrGaussian}, Implicit NeRF = ${lrNerf}`);
-        requestAnimationFrame(trainingLoop);
+        // Only launch a new loop if none is alive
+        if (!isLoopRunning) {
+            requestAnimationFrame(trainingLoop);
+        }
     }
 }
 
 
 let stepCounter = 0;
+let isLoopRunning = false; // Guard against re-entrant loop launches
 
 // Core animation and optimization loop
 async function trainingLoop() {
+    // Prevent double-launch: if another loop iteration is still alive, bail out
+    if (isLoopRunning) return;
     if (!isTraining || !session) return;
+
+    isLoopRunning = true;
 
     const lrGaussian = parseFloat(lrGaussianInput.value) || 0.005;
     const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
@@ -619,16 +627,19 @@ async function trainingLoop() {
     } catch (e) {
         console.error("Error during training step:", e);
         isTraining = false;
+        isLoopRunning = false;
         btnTrain.textContent = '▶ Continue Fitting';
         btnTrain.classList.remove('btn-stop');
         return;
     }
 
-    // Micro-yield execution to browser event loop
+    isLoopRunning = false;
+
+    // Micro-yield execution to browser event loop, then re-schedule
     await new Promise(resolve => setTimeout(resolve, 2));
 
     if (isTraining) {
-        requestAnimationFrame(() => trainingLoop());
+        requestAnimationFrame(trainingLoop);
     }
 }
 
