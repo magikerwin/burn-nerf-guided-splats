@@ -472,6 +472,8 @@ function resetSession() {
 
     lossHistoryGaussian = [];
     lossHistoryNerf = [];
+    stepCounter = 0;
+
     
     // Clear views
     clearCanvas(canvasGaussian);
@@ -517,6 +519,8 @@ async function toggleTraining() {
     }
 }
 
+let stepCounter = 0;
+
 // Core animation and optimization loop
 async function trainingLoop() {
     if (!isTraining || !session) return;
@@ -525,36 +529,35 @@ async function trainingLoop() {
     const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
 
     try {
-        await gpuQueue.run(async () => {
-            if (!isTraining || !session) return;
+        // Fast non-blocking GPU optimization steps (Zero CPU buffer mapAsync readbacks!)
+        session.step_gaussian_fast(lrGaussian);
+        session.step_nerf_fast(lrNerf);
+        stepCounter++;
 
-            // 1. Step the Gaussian Splatting model jointly over keyframe views
-            const lossG = await session.step_gaussian(lrGaussian);
-            lossHistoryGaussian.push(lossG);
-            labelLossGaussian.textContent = `Loss: ${lossG.toFixed(5)}`;
+        // Read losses and render canvases periodically every 5 steps
+        if (stepCounter % 5 === 0 || stepCounter === 1) {
+            await gpuQueue.run(async () => {
+                if (!session) return;
+                const losses = await session.get_losses();
+                const lossG = losses[0];
+                const lossN = losses[1];
+                lossHistoryGaussian.push(lossG);
+                lossHistoryNerf.push(lossN);
+                labelLossGaussian.textContent = `Loss: ${lossG.toFixed(5)}`;
+                labelLossNerf.textContent = `Loss: ${lossN.toFixed(5)}`;
 
-            // 2. Step the view-conditioned NeRF MLP model jointly over keyframe views
-            const lossN = await session.step_nerf(lrNerf);
-            lossHistoryNerf.push(lossN);
-            labelLossNerf.textContent = `Loss: ${lossN.toFixed(5)}`;
-
-            const stepCount = lossHistoryGaussian.length;
-
-            // Render canvases every 5 steps
-            if (stepCount % 5 === 0 || stepCount === 1) {
                 const rgbG = await session.get_gaussian_render_view(currentViewV);
                 const rgbN = await session.get_nerf_render_view(currentViewV);
                 renderModelOutput(canvasGaussian, rgbG);
                 renderModelOutput(canvasNerf, rgbN);
                 updateBlendCanvas();
                 drawLossChart();
-            }
 
-            // Log progress
-            if (stepCount % 50 === 0) {
-                console.log(`[Step ${stepCount}] GS Multi-View Loss: ${lossG.toFixed(5)} | NeRF Multi-View Loss: ${lossN.toFixed(5)}`);
-            }
-        });
+                if (stepCounter % 50 === 0) {
+                    console.log(`[Step ${stepCounter}] GS Loss: ${lossG.toFixed(5)} | NeRF Loss: ${lossN.toFixed(5)}`);
+                }
+            });
+        }
     } catch (e) {
         console.error("Error during training step:", e);
         isTraining = false;
@@ -563,14 +566,14 @@ async function trainingLoop() {
         return;
     }
 
-    // Yield control back to browser event loop
-    await new Promise(resolve => setTimeout(resolve, 4));
+    // Micro-yield execution to browser event loop
+    await new Promise(resolve => setTimeout(resolve, 2));
 
-    // Loop next step
     if (isTraining) {
         requestAnimationFrame(() => trainingLoop());
     }
 }
+
 
 // Pre-train NeRF to capture coarse multi-view edges
 async function runNeRFPretraining() {

@@ -72,29 +72,56 @@ impl WasmTrainingSession {
     }
 
 
-    pub async fn step_gaussian(&mut self, lr: f64) -> f32 {
-        let (updated_model, loss_tensor) = train_step_multiframe(
+    /// Fast non-blocking GPU optimization step for 3D Gaussian Splatting (Zero CPU buffer readback).
+    pub fn step_gaussian_fast(&mut self, lr: f64) {
+        let (updated_model, _loss_tensor) = train_step_multiframe(
             self.gaussian_model.clone(),
             &mut self.gaussian_optim,
             &self.target_tensors,
             lr,
         );
         self.gaussian_model = updated_model;
-        let data = loss_tensor.into_data_async().await.expect("Failed to read loss data");
-        data.as_slice::<f32>().unwrap()[0]
     }
 
-    pub async fn step_nerf(&mut self, lr: f64) -> f32 {
-        let (updated_model, loss_tensor) = train_step_multiframe(
+    /// Fast non-blocking GPU optimization step for Implicit NeRF (Zero CPU buffer readback).
+    pub fn step_nerf_fast(&mut self, lr: f64) {
+        let (updated_model, _loss_tensor) = train_step_multiframe(
             self.nerf_model.clone(),
             &mut self.nerf_optim,
             &self.target_tensors,
             lr,
         );
         self.nerf_model = updated_model;
-        let data = loss_tensor.into_data_async().await.expect("Failed to read loss data");
+    }
+
+    /// Asynchronously fetches current loss values for Gaussian Splatting and NeRF.
+    pub async fn get_losses(&self) -> Vec<f32> {
+        let loss_g = self.gaussian_model.forward_loss_multiframe(&self.target_tensors);
+        let loss_n = self.nerf_model.forward_loss_multiframe(&self.target_tensors);
+        
+        let data_g = loss_g.into_data_async().await.expect("Failed to read loss G");
+        let data_n = loss_n.into_data_async().await.expect("Failed to read loss N");
+
+        vec![
+            data_g.as_slice::<f32>().unwrap()[0],
+            data_n.as_slice::<f32>().unwrap()[0],
+        ]
+    }
+
+    pub async fn step_gaussian(&mut self, lr: f64) -> f32 {
+        self.step_gaussian_fast(lr);
+        let loss_g = self.gaussian_model.forward_loss_multiframe(&self.target_tensors);
+        let data = loss_g.into_data_async().await.expect("Failed to read loss data");
         data.as_slice::<f32>().unwrap()[0]
     }
+
+    pub async fn step_nerf(&mut self, lr: f64) -> f32 {
+        self.step_nerf_fast(lr);
+        let loss_n = self.nerf_model.forward_loss_multiframe(&self.target_tensors);
+        let data = loss_n.into_data_async().await.expect("Failed to read loss data");
+        data.as_slice::<f32>().unwrap()[0]
+    }
+
 
     pub async fn get_gaussian_render_view(&self, view_v: f32) -> Vec<u8> {
         let rendered = self.gaussian_model.render_view(self.width, self.height, view_v);
