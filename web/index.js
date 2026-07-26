@@ -135,63 +135,148 @@ function updateCanvasDimensions() {
 // Handle render grid resolution dropdown change
 function handleResolutionChange() {
     updateCanvasDimensions();
-    generateSyntheticTargets();
+    generateSyntheticTargets(selectImg ? selectImg.value : 'multi-geometry');
     resetSession();
 }
 
-// Generate default synthetic target frames (View 0 circle vs View 1 skewed circle)
-function generateSyntheticTargets() {
+
+// Generate multi-scene synthetic target keyframe sequences
+function generateSyntheticTargets(type = 'multi-geometry') {
     targetFrames = [];
+    const numFrames = (type === 'synthetic') ? 2 : 4;
 
-    // Frame 1 (0°): Red circle in center
-    const canvas0 = document.createElement('canvas');
-    canvas0.width = width;
-    canvas0.height = height;
-    const ctx0 = canvas0.getContext('2d');
-    ctx0.fillStyle = '#000080';
-    ctx0.fillRect(0, 0, width, height);
-    ctx0.beginPath();
-    ctx0.arc(width * 0.5, height * 0.5, width * 0.35, 0, 2 * Math.PI);
-    ctx0.fillStyle = '#ff0000';
-    ctx0.fill();
+    for (let f = 0; f < numFrames; f++) {
+        const normV = f / (numFrames - 1); // 0.0, 0.33, 0.67, 1.0
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = width;
+        tempCanvas.height = height;
+        const ctx = tempCanvas.getContext('2d');
 
-    const imgData0 = ctx0.getImageData(0, 0, width, height);
-    const frame0 = new Uint8Array(width * height * 3);
-    let idx = 0;
-    for (let i = 0; i < imgData0.data.length; i += 4) {
-        frame0[idx++] = imgData0.data[i];
-        frame0[idx++] = imgData0.data[i + 1];
-        frame0[idx++] = imgData0.data[i + 2];
+        if (type === 'multi-geometry') {
+            // Scene 1: 3D Multi-Color Shapes with Parallax (Red Sphere, Green Box, Cyan Triangle)
+            ctx.fillStyle = '#090d16'; // Deep Space Background
+            ctx.fillRect(0, 0, width, height);
+
+            // Background Green Box (Parallax shift right as camera rotates)
+            const greenX = width * (0.22 + normV * 0.18);
+            ctx.fillStyle = '#10b981';
+            ctx.fillRect(greenX, height * 0.3, width * 0.22, height * 0.4);
+
+            // Foreground Red Sphere (Center)
+            ctx.beginPath();
+            ctx.arc(width * 0.5, height * 0.5, width * 0.22, 0, 2 * Math.PI);
+            ctx.fillStyle = '#f97316';
+            ctx.fill();
+
+            // Right Cyan Triangle
+            const cyanX = width * (0.75 - normV * 0.12);
+            ctx.beginPath();
+            ctx.moveTo(cyanX, height * 0.25);
+            ctx.lineTo(cyanX + width * 0.12, height * 0.65);
+            ctx.lineTo(cyanX - width * 0.12, height * 0.65);
+            ctx.closePath();
+            ctx.fillStyle = '#06b6d4';
+            ctx.fill();
+
+        } else if (type === 'planet-orbit') {
+            // Scene 2: 3D Solar System (Sun in center, Earth & Mars orbiting)
+            ctx.fillStyle = '#030712';
+            ctx.fillRect(0, 0, width, height);
+
+            // Orbit Path Guide Ring
+            ctx.strokeStyle = '#1e293b';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.ellipse(width * 0.5, height * 0.5, width * 0.38, height * 0.22, 0, 0, 2 * Math.PI);
+            ctx.stroke();
+
+            // Center Sun
+            ctx.beginPath();
+            ctx.arc(width * 0.5, height * 0.5, width * 0.18, 0, 2 * Math.PI);
+            ctx.fillStyle = '#f59e0b';
+            ctx.fill();
+
+            // Blue Earth (Orbiting around Sun)
+            const angleEarth = normV * Math.PI * 0.9;
+            const earthX = width * 0.5 + Math.cos(angleEarth) * (width * 0.38);
+            const earthY = height * 0.5 + Math.sin(angleEarth) * (height * 0.22);
+            ctx.beginPath();
+            ctx.arc(earthX, earthY, width * 0.08, 0, 2 * Math.PI);
+            ctx.fillStyle = '#3b82f6';
+            ctx.fill();
+
+            // Red Mars (Orbiting on smaller inner arc)
+            const angleMars = Math.PI - normV * Math.PI * 0.7;
+            const marsX = width * 0.5 + Math.cos(angleMars) * (width * 0.26);
+            const marsY = height * 0.5 + Math.sin(angleMars) * (height * 0.14);
+            ctx.beginPath();
+            ctx.arc(marsX, marsY, width * 0.06, 0, 2 * Math.PI);
+            ctx.fillStyle = '#ef4444';
+            ctx.fill();
+
+        } else if (type === 'emoji-face') {
+            // Scene 3: 3D Emoji Face Arc
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, width, height);
+
+            const skew = (normV - 0.5) * 0.35;
+            ctx.save();
+            ctx.translate(width * 0.5, height * 0.5);
+            ctx.transform(1, 0, skew, 1, 0, 0);
+
+            // Yellow Head
+            ctx.beginPath();
+            ctx.arc(0, 0, width * 0.36, 0, 2 * Math.PI);
+            ctx.fillStyle = '#eab308';
+            ctx.fill();
+
+            // Eyes
+            ctx.fillStyle = '#1e293b';
+            ctx.beginPath();
+            ctx.arc(-width * 0.12, -height * 0.1, width * 0.06, 0, 2 * Math.PI);
+            ctx.arc(width * 0.12, -height * 0.1, width * 0.06, 0, 2 * Math.PI);
+            ctx.fill();
+
+            // Smile
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#1e293b';
+            ctx.beginPath();
+            ctx.arc(0, height * 0.05, width * 0.18, 0.2, Math.PI - 0.2);
+            ctx.stroke();
+
+            ctx.restore();
+
+        } else {
+            // Benchmark Dual-View (Circle 0° vs 30°)
+            ctx.fillStyle = '#000080';
+            ctx.fillRect(0, 0, width, height);
+            ctx.beginPath();
+            if (f === 0) {
+                ctx.arc(width * 0.5, height * 0.5, width * 0.35, 0, 2 * Math.PI);
+            } else {
+                ctx.ellipse(width * 0.58, height * 0.5, width * 0.28, width * 0.35, Math.PI / 12, 0, 2 * Math.PI);
+            }
+            ctx.fillStyle = '#ff0000';
+            ctx.fill();
+        }
+
+        const imgData = ctx.getImageData(0, 0, width, height);
+        const frameBuf = new Uint8Array(width * height * 3);
+        let idx = 0;
+        for (let i = 0; i < imgData.data.length; i += 4) {
+            frameBuf[idx++] = imgData.data[i];
+            frameBuf[idx++] = imgData.data[i + 1];
+            frameBuf[idx++] = imgData.data[i + 2];
+        }
+        targetFrames.push(frameBuf);
     }
-    targetFrames.push(frame0);
 
-    // Frame 2 (30°): Shifted/Rotated circle
-    const canvas1 = document.createElement('canvas');
-    canvas1.width = width;
-    canvas1.height = height;
-    const ctx1 = canvas1.getContext('2d');
-    ctx1.fillStyle = '#000080';
-    ctx1.fillRect(0, 0, width, height);
-    ctx1.beginPath();
-    ctx1.ellipse(width * 0.58, height * 0.5, width * 0.28, width * 0.35, Math.PI / 12, 0, 2 * Math.PI);
-    ctx1.fillStyle = '#ff0000';
-    ctx1.fill();
-
-    const imgData1 = ctx1.getImageData(0, 0, width, height);
-    const frame1 = new Uint8Array(width * height * 3);
-    idx = 0;
-    for (let i = 0; i < imgData1.data.length; i += 4) {
-        frame1[idx++] = imgData1.data[i];
-        frame1[idx++] = imgData1.data[i + 1];
-        frame1[idx++] = imgData1.data[i + 2];
-    }
-    targetFrames.push(frame1);
-
-    if (labelViewStart) labelViewStart.textContent = 'Photo 1 (0°)';
-    if (labelViewEnd) labelViewEnd.textContent = 'Photo 2 (30°)';
+    if (labelViewStart) labelViewStart.textContent = `Photo 1`;
+    if (labelViewEnd) labelViewEnd.textContent = `Photo ${numFrames}`;
 
     renderTargetViewBlend();
 }
+
 
 // Render blended Ground Truth view based on current view slider parameter
 function renderTargetViewBlend() {
@@ -271,14 +356,16 @@ function handleMultiPhotoUpload(e) {
 
 // Handle image selection dropdown
 function handleImageSelect() {
-    if (selectImg.value === 'synthetic') {
-        if (customUploadContainer) customUploadContainer.classList.add('hidden');
-        generateSyntheticTargets();
-        resetSession();
-    } else if (selectImg.value === 'upload') {
+    const val = selectImg.value;
+    if (val === 'upload') {
         if (customUploadContainer) customUploadContainer.classList.remove('hidden');
+    } else {
+        if (customUploadContainer) customUploadContainer.classList.add('hidden');
+        generateSyntheticTargets(val);
+        resetSession();
     }
 }
+
 
 // Handle view interpolation slider movement
 async function handleViewSliderInput() {

@@ -116,14 +116,18 @@
                     <div class="form-group">
                         <label for="image-select">Target Image Source</label>
                         <select id="image-select" class="custom-select">
-                            <option value="synthetic">Synthetic Views (Circle 0° & Ellipse 30°)</option>
-                            <option value="upload">Upload Custom Photo Sequence (2 to 5 Photos)...</option>
+                            <option value="multi-geometry" selected>🎨 3D Multi-Color Shapes (4-Frame Parallax)</option>
+                            <option value="planet-orbit">🪐 3D Solar System (4-Frame Orbit)</option>
+                            <option value="emoji-face">😊 3D Emoji Face (4-Frame Arc)</option>
+                            <option value="synthetic">🔴 Dual-View Benchmark (Circle 0° & 30°)</option>
+                            <option value="upload">📷 Upload Custom Photo Sequence (2 to 5 Photos)...</option>
                         </select>
                         <div id="custom-upload-container" class="hidden form-subgroup">
                             <label>Select Multi-Photo Sequence:</label>
                             <input type="file" id="image-upload-multi" accept="image/*" multiple>
                         </div>
                     </div>
+
 
                     <div class="form-row">
                         <div class="form-group">
