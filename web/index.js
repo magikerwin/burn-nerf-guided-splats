@@ -595,15 +595,17 @@ async function trainingLoop() {
     const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
 
     try {
-        // Fast non-blocking GPU optimization steps (Zero CPU buffer mapAsync readbacks!)
-        session.step_gaussian_fast(lrGaussian);
-        session.step_nerf_fast(lrNerf);
-        stepCounter++;
+        // ALL session access goes through gpuQueue to serialize wasm-bindgen RefCell borrows
+        await gpuQueue.run(async () => {
+            if (!session || !isTraining) return;
 
-        // Read losses and render canvases periodically every 5 steps
-        if (stepCounter % 5 === 0 || stepCounter === 1) {
-            await gpuQueue.run(async () => {
-                if (!session) return;
+            // Synchronous GPU dispatch (no CPU readback)
+            session.step_gaussian_fast(lrGaussian);
+            session.step_nerf_fast(lrNerf);
+            stepCounter++;
+
+            // Async CPU readback only every 5 steps
+            if (stepCounter % 5 === 0 || stepCounter === 1) {
                 const losses = await session.get_losses();
                 const lossG = losses[0];
                 const lossN = losses[1];
@@ -622,8 +624,8 @@ async function trainingLoop() {
                 if (stepCounter % 50 === 0) {
                     console.log(`[Step ${stepCounter}] GS Loss: ${lossG.toFixed(5)} | NeRF Loss: ${lossN.toFixed(5)}`);
                 }
-            });
-        }
+            }
+        });
     } catch (e) {
         console.error("Error during training step:", e);
         isTraining = false;
@@ -635,14 +637,12 @@ async function trainingLoop() {
 
     isLoopRunning = false;
 
-    // Micro-yield execution to browser event loop, then re-schedule
-    await new Promise(resolve => setTimeout(resolve, 2));
-
+    // Yield to browser event loop then reschedule
     if (isTraining) {
+        await new Promise(resolve => setTimeout(resolve, 2));
         requestAnimationFrame(trainingLoop);
     }
 }
-
 
 
 // Automated 1-Click NeRF-Guided Seeding Pipeline
