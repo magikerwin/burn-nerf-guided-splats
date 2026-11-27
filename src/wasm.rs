@@ -65,8 +65,8 @@ impl<B: AutodiffBackend> GenericSession<B> {
     ) -> Self {
         let device = B::Device::default();
         let shape = [height, width, 3];
-        let cw = 12.min(width);
-        let ch = 12.min(height);
+        let cw = 16.min(width);
+        let ch = 16.min(height);
 
         let mut target_tensors = Vec::with_capacity(rgb_slices.len());
         let mut turntable_views = Vec::with_capacity(rgb_slices.len());
@@ -120,7 +120,7 @@ impl<B: AutodiffBackend> GenericSession<B> {
         let nerf_model = NerfModel::<B>::new(8, 64, &device);
         let nerf_optim = AdamConfig::new().init();
 
-        let vol_nerf_model = VolumetricNerfModel::<B>::new(4, 32, 12, &device);
+        let vol_nerf_model = VolumetricNerfModel::<B>::new(4, 32, 14, &device);
         let vol_nerf_optim = AdamConfig::new().init();
 
         Self {
@@ -324,10 +324,10 @@ impl WasmTrainingSession {
         }
     }
 
-    pub async fn get_vol_nerf_turntable_render(&self, yaw: f32, pitch: f32) -> Vec<u8> {
+    pub async fn get_vol_nerf_turntable_render(&self, nw: usize, nh: usize, yaw: f32, pitch: f32) -> Vec<u8> {
         match &self.inner {
-            SessionBackend::Wgpu(s) => GenericSession::tensor_to_rgb_u8(s.vol_nerf_model.render_turntable(24, 24, yaw, pitch)).await,
-            SessionBackend::Cpu(s) => GenericSession::tensor_to_rgb_u8(s.vol_nerf_model.render_turntable(24, 24, yaw, pitch)).await,
+            SessionBackend::Wgpu(s) => GenericSession::tensor_to_rgb_u8(s.vol_nerf_model.render_turntable(nw, nh, yaw, pitch)).await,
+            SessionBackend::Cpu(s) => GenericSession::tensor_to_rgb_u8(s.vol_nerf_model.render_turntable(nw, nh, yaw, pitch)).await,
         }
     }
 
@@ -342,6 +342,20 @@ impl WasmTrainingSession {
         match &self.inner {
             SessionBackend::Wgpu(s) => GenericSession::tensor_to_rgb_u8(s.gaussian_model.render_turntable(s.width, s.height, yaw, pitch)).await,
             SessionBackend::Cpu(s) => GenericSession::tensor_to_rgb_u8(s.gaussian_model.render_turntable(s.width, s.height, yaw, pitch)).await,
+        }
+    }
+
+    pub async fn get_blind_turntable_splats(&self, yaw: f32, pitch: f32) -> Vec<f32> {
+        match &self.inner {
+            SessionBackend::Wgpu(s) => s.blind_gaussian_model.extract_turntable_splat_descriptors_async(yaw, pitch).await,
+            SessionBackend::Cpu(s) => s.blind_gaussian_model.extract_turntable_splat_descriptors_async(yaw, pitch).await,
+        }
+    }
+
+    pub async fn get_guided_turntable_splats(&self, yaw: f32, pitch: f32) -> Vec<f32> {
+        match &self.inner {
+            SessionBackend::Wgpu(s) => s.gaussian_model.extract_turntable_splat_descriptors_async(yaw, pitch).await,
+            SessionBackend::Cpu(s) => s.gaussian_model.extract_turntable_splat_descriptors_async(yaw, pitch).await,
         }
     }
 

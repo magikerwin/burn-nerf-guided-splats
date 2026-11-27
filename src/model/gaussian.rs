@@ -336,6 +336,39 @@ impl<B: Backend> GaussianModel<B> {
         out
     }
 
+    /// Exports flat `[u_proj, v_proj, d_cam, sx, sy, theta, r, g, b, alpha]` (10 floats per Gaussian)
+    /// projected under 3D turntable camera `(yaw, pitch)`.
+    pub async fn extract_turntable_splat_descriptors_async(&self, yaw: f32, pitch: f32) -> Vec<f32> {
+        let (proj_means, d_cam) = self.compute_turntable_means_and_depths(yaw, pitch);
+        let scales = self.scales.val().exp();
+        let rots = self.rotations.val();
+        let cols = sigmoid(self.colors.val());
+        let opacs = sigmoid(self.opacities.val());
+
+        let xy_vec = proj_means.into_data_async().await.unwrap().into_vec::<f32>().unwrap();
+        let z_vec = d_cam.into_data_async().await.unwrap().into_vec::<f32>().unwrap();
+        let s_vec = scales.into_data_async().await.unwrap().into_vec::<f32>().unwrap();
+        let r_vec = rots.into_data_async().await.unwrap().into_vec::<f32>().unwrap();
+        let c_vec = cols.into_data_async().await.unwrap().into_vec::<f32>().unwrap();
+        let o_vec = opacs.into_data_async().await.unwrap().into_vec::<f32>().unwrap();
+
+        let n = self.num_gaussians;
+        let mut out = Vec::with_capacity(n * 10);
+        for i in 0..n {
+            out.push(xy_vec[i * 2]);
+            out.push(xy_vec[i * 2 + 1]);
+            out.push(z_vec[i]);
+            out.push(s_vec[i * 2]);
+            out.push(s_vec[i * 2 + 1]);
+            out.push(r_vec[i]);
+            out.push(c_vec[i * 3]);
+            out.push(c_vec[i * 3 + 1]);
+            out.push(c_vec[i * 3 + 2]);
+            out.push(o_vec[i]);
+        }
+        out
+    }
+
     /// Educational Adaptive Density Control (Kerbl et al. 3DGS style):
     /// 1. Prunes transparent "dead" splats (`alpha < min_opacity`) or oversized floaters (`scale > 0.35`).
     /// 2. Splits the largest high-opacity splats along their major axis into two sharper child splats,
