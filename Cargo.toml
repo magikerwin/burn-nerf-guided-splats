@@ -2,10 +2,12 @@
 name = "burn-nerf-guided-splats"
 version = "0.1.0"
 edition = "2024"
-description = "Educational 2D Gaussian Splatting vs. NeRF comparison and hybrid guided seeding playground in Burn."
+description = "Interactive 3D Volumetric NeRF-guided 3D Gaussian Splatting engine built in pure Rust, Burn, and WebAssembly."
+homepage = "https://magikerwin.github.io/burn-nerf-guided-splats/"
 repository = "https://github.com/magikerwin/burn-nerf-guided-splats"
-license = "MIT OR Apache-2.0"
-
+license = "MIT"
+keywords = ["burn", "gaussian-splatting", "nerf", "webassembly", "webgpu"]
+categories = ["graphics", "rendering", "science", "wasm"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -24,5 +26,3 @@ wasm-bindgen-futures = "0.4"
 getrandom = { version = "0.3", features = ["wasm_js"] }
 getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"] }
 getrandom_04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
-
-

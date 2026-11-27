@@ -1,201 +1,207 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🔥 3D Gaussian Splatting & NeRF Playground</title>
-    <link rel="stylesheet" href="style.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>3D NeRF-Guided Gaussian Splatting — Kerwin Studio · Burn (Rust)</title>
+    <meta name="description" content="Interactive 3D Volumetric Ray-Marched NeRF guiding 3D Gaussian Splatting in pure Rust, Burn, and WebAssembly." />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2314151a'/%3E%3Ctext x='16' y='22' text-anchor='middle' fill='%23fdfbf6' font-family='system-ui,sans-serif' font-weight='800' font-size='18'%3EK%3C/text%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="style.css" />
 </head>
-<body class="y2k-light-theme">
-    <div class="app-container">
-        <!-- Top Navigation Header -->
-        <header class="main-header">
-            <div class="header-brand">
-                <div class="brand-logo">🔥</div>
-                <div>
-                    <h1 class="pixel-title">3D GS & NeRF PLAYGROUND</h1>
-                    <p class="subtitle">Multi-View 3D Gaussian Splatting & View-Conditioned Coordinate NeRF</p>
-                </div>
+
+<body>
+    <div class="shell">
+        <nav class="top-bar" aria-label="Studio Navigation">
+            <div class="brand-group">
+                <a class="brand-mark" href="https://magikerwin.github.io/" aria-label="Kerwin Studio Home">K</a>
+                <a class="brand-crumb" href="https://magikerwin.github.io/">KERWIN <span>/ BURN-3DGS</span></a>
             </div>
-            <div class="header-actions">
-                <button id="btn-toggle-advanced" class="btn secondary-btn retro-btn">⚙️ Advanced Settings</button>
+            <div class="top-nav">
+                <a class="nav-link" href="#architecture">Notes</a>
+                <a class="nav-link" href="https://github.com/magikerwin/burn-nerf-guided-splats" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+            </div>
+        </nav>
+
+        <header class="studio-hero">
+            <svg class="orbital-reticle" viewBox="0 0 400 400" aria-hidden="true">
+                <circle cx="200" cy="200" r="95" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="3 6" />
+                <circle cx="200" cy="200" r="150" fill="none" stroke="currentColor" stroke-width="1" />
+                <circle cx="200" cy="200" r="192" fill="none" stroke="currentColor" stroke-width="1" opacity="0.55" />
+                <line x1="200" y1="8" x2="200" y2="34" stroke="currentColor" stroke-width="1.2" />
+                <line x1="200" y1="366" x2="200" y2="392" stroke="currentColor" stroke-width="1.2" />
+                <line x1="8" y1="200" x2="34" y2="200" stroke="currentColor" stroke-width="1.2" />
+                <line x1="366" y1="200" x2="392" y2="200" stroke="currentColor" stroke-width="1.2" />
+            </svg>
+
+            <div class="hero-top">
+                <div class="telemetry-pill">
+                    <span class="telemetry-dot"></span>
+                    <span>LAB · DIFFERENTIABLE 3D VISION · RUST + BURN 0.21</span>
+                </div>
+                <span id="backend-pill" class="status-badge">⏳ LOADING WASM...</span>
+            </div>
+
+            <div class="hero-copy">
+                <h1>3D NeRF-Guided Gaussian Splatting</h1>
+                <p>
+                    Coarse 3D Volumetric Ray-Marched NeRF <code>(x,y,z) → (RGB, σ)</code> carves sparse 3D matter inside <code>[0,1]³</code> to seed explicit 3D Gaussian Splatting in real time.
+                </p>
+            </div>
+
+            <div class="selector-deck">
+                <div class="selector-container">
+                    <span class="selector-label">Views
+                        <button type="button" class="info-trigger" data-tooltip="Calibrated 360° camera views K supervising 3D reconstruction. K=2 exhibits epipolar ambiguity; K=4 or K=8 triangulates the full 3D ring.">?</button>
+                    </span>
+                    <div class="tabs" id="view-tabs">
+                        <button type="button" class="tab-btn" data-views="2">2 Views</button>
+                        <button type="button" class="tab-btn active" data-views="4">4 Views</button>
+                        <button type="button" class="tab-btn" data-views="8">8 Views</button>
+                    </div>
+                </div>
+
+                <div class="selector-container">
+                    <span class="selector-label">Budget
+                        <button type="button" class="info-trigger" data-tooltip="Total 3D Gaussians N inside [0, 1]³. At sparse budgets (N=26), random 3D splats miss thin rings while NeRF-seeded splats lock onto every body.">?</button>
+                    </span>
+                    <div class="tabs" id="budget-tabs">
+                        <button type="button" class="tab-btn active" data-n="26">26 Splats</button>
+                        <button type="button" class="tab-btn" data-n="48">48 Splats</button>
+                    </div>
+                </div>
             </div>
         </header>
 
-
-
-
-        <!-- Streamlined Hero Control Bar -->
-        <div class="card hero-control-bar">
-            <div class="control-bar-left">
-                <button id="btn-train" class="btn primary-btn large-btn">▶ Start Fitting</button>
-                <button id="btn-reset" class="btn secondary-btn">Reset</button>
-                <label class="checkbox-toggle" title="✨ Enable for better quality! Pre-trains NeRF to automatically place 3D Gaussians along detected object boundaries.">
-                    <input type="checkbox" id="chk-nerf-guided">
-                    <span>🎓 NeRF-Guided Seeding</span>
-                </label>
+        <main class="instrument-card">
+            <div class="sec-head">
+                <span class="sec-kicker">01 · Head-to-Head 360° Turntable Instrument</span>
+                <span id="step-pill" class="status-badge">STEP 0</span>
             </div>
 
-            <div class="control-bar-center">
-                <div class="orbit-slider-container">
-                    <div class="orbit-slider-header">
-                        <button id="btn-autoplay" class="btn text-btn">▶ Play Orbit</button>
-                        <span id="view-angle-text" class="badge">View v = 0.50</span>
+            <div class="stages-grid">
+                <!-- 1. Ground Truth -->
+                <div class="stage-tile">
+                    <div class="stage-header">
+                        <span class="stage-title">1. Target (GT)
+                            <button type="button" class="info-trigger" data-tooltip="11-body 3D Saturn System inside [0, 1]³: golden core + 8 tilted 3D ring nodes + 2 moons (~98.6% empty air).">?</button>
+                        </span>
+                        <span id="pill-gt" class="metric-pill neutral">K=4 · 3D</span>
                     </div>
-                    <div class="slider-wrapper">
-                        <span id="label-view-start" class="slider-end-label orange-text">Photo 1</span>
-                        <input type="range" id="view-slider" min="0" max="1" step="0.005" value="0.5" class="custom-range-slider">
-                        <span id="label-view-end" class="slider-end-label purple-text">Photo 2</span>
+                    <div class="progress-bar-bg"><div class="progress-bar-fill gt"></div></div>
+                    <div class="canvas-wrapper">
+                        <canvas id="cv-gt" class="pix" width="44" height="44"></canvas>
+                        <canvas id="ov-gt" class="ov" width="176" height="176"></canvas>
+                    </div>
+                    <p class="stage-caption">11-part 3D Saturn + tilted ring + 2 moons with occlusion.</p>
+                </div>
+
+                <!-- 2. 3D Volumetric NeRF -->
+                <div class="stage-tile">
+                    <div class="stage-header">
+                        <span class="stage-title">2. 3D NeRF
+                            <button type="button" class="info-trigger" data-tooltip="VolumetricNerfModel marches 14 depth samples per ray across coarse 16×16 views to discover 3D density σ(x,y,z) in 35 warmup steps.">?</button>
+                        </span>
+                        <span id="status-nerf" class="metric-pill nerf">0/35</span>
+                    </div>
+                    <div class="progress-bar-bg"><div id="bar-nerf" class="progress-bar-fill nerf"></div></div>
+                    <div class="canvas-wrapper">
+                        <canvas id="cv-nerf" class="pix" width="28" height="28"></canvas>
+                        <canvas id="ov-nerf" class="ov" width="176" height="176"></canvas>
+                    </div>
+                    <p class="stage-caption">Ray-marches <code>[0,1]³</code> to locate dense <code>σ(x,y,z)</code> voxels.</p>
+                </div>
+
+                <!-- 3. Blind 3DGS -->
+                <div class="stage-tile">
+                    <div class="stage-header">
+                        <span class="stage-title">3. Blind 3DGS
+                            <button type="button" class="info-trigger" data-tooltip="Trains from Step 1 with random 3D coordinates. Splats stranded in empty space vanish or overfit 2D silhouettes at wrong 3D depths.">?</button>
+                        </span>
+                        <span id="score-blind" class="metric-pill blind">-- dB</span>
+                    </div>
+                    <div class="progress-bar-bg"><div id="bar-blind" class="progress-bar-fill blind"></div></div>
+                    <div class="canvas-wrapper">
+                        <canvas id="cv-blind" class="pix" width="44" height="44"></canvas>
+                        <canvas id="ov-blind" class="ov" width="176" height="176"></canvas>
+                    </div>
+                    <p class="stage-caption">Random 3D init misses thin rings and drifts on rotation.</p>
+                </div>
+
+                <!-- 4. Guided 3DGS -->
+                <div class="stage-tile guided-tile">
+                    <div class="stage-header">
+                        <span class="stage-title">4. Guided 3DGS
+                            <button type="button" class="info-trigger" data-tooltip="Farthest-point active-voxel seeding spawns all N Gaussians onto the 3D ring, refined with Kerbl-style decoupled position LR (0.1×).">?</button>
+                        </span>
+                        <span id="score-guided" class="metric-pill guided">Wait</span>
+                    </div>
+                    <div class="progress-bar-bg"><div id="bar-guided" class="progress-bar-fill guided"></div></div>
+                    <div class="canvas-wrapper">
+                        <canvas id="cv-guided" class="pix" width="44" height="44"></canvas>
+                        <canvas id="ov-guided" class="ov" width="176" height="176"></canvas>
+                    </div>
+                    <p class="stage-caption">Farthest-point <code>σ</code> seeding + Kerbl LR locks onto 3D ring.</p>
+                </div>
+            </div>
+
+            <div class="controls-panel">
+                <div class="btn-group">
+                    <button type="button" id="btn-race" class="primary-btn">▶ Start Fair 3D Race</button>
+                    <button type="button" id="btn-reset" class="secondary-btn">↺ Reset</button>
+                </div>
+
+                <div class="sliders-row">
+                    <div class="slider-field">
+                        <label for="yaw-slider">360° Yaw</label>
+                        <input type="range" id="yaw-slider" min="-3.14" max="3.14" step="0.04" value="0.55" />
+                    </div>
+                    <div class="slider-field">
+                        <label for="pitch-slider">3D Tilt</label>
+                        <input type="range" id="pitch-slider" min="-0.85" max="0.85" step="0.04" value="0.26" />
                     </div>
                 </div>
-            </div>
 
-            <div class="control-bar-right">
-                <div class="select-wrapper">
-                    <label for="resolution-select" class="select-label">Res:</label>
-                    <select id="resolution-select" class="custom-select">
-                        <option value="64" selected>64x64</option>
-                        <option value="128">128x128</option>
-                    </select>
-                </div>
-            </div>
-        </div>
-
-
-
-        <!-- Main 3-Card Centerpiece Comparison Row -->
-        <main class="visualizer-grid">
-            <!-- 1. Ground Truth Target View -->
-            <div class="card visualizer-card target-card">
-                <div class="card-header">
-                    <h3>Ground Truth Target</h3>
-                    <span class="card-tag">Reference</span>
-                </div>
-                <div class="canvas-container">
-                    <canvas id="canvas-target" width="64" height="64"></canvas>
-                </div>
-                <div class="card-footer">
-                    <span>Multi-View Target Blend</span>
-                </div>
-            </div>
-
-            <!-- 2. Explicit 3D Gaussians (GS) -->
-            <div class="card visualizer-card gaussian-card">
-                <div class="card-header">
-                    <h3 class="orange-text">Explicit 3D Gaussians</h3>
-                    <span id="loss-gaussian" class="loss-badge orange-badge">Loss: --</span>
-                </div>
-                <div class="canvas-container">
-                    <canvas id="canvas-gaussian" width="64" height="64"></canvas>
-                </div>
-                <div class="card-footer">
-                    <span>3D Rotated Projection Splats</span>
-                </div>
-            </div>
-
-            <!-- 3. Implicit View NeRF (MLP) -->
-            <div class="card visualizer-card nerf-card">
-                <div class="card-header">
-                    <h3 class="purple-text">Implicit View NeRF</h3>
-                    <span id="loss-nerf" class="loss-badge purple-badge">Loss: --</span>
-                </div>
-                <div class="canvas-container">
-                    <canvas id="canvas-nerf" width="64" height="64"></canvas>
-                </div>
-                <div class="card-footer">
-                    <span>View-Conditioned Coordinate Network</span>
+                <div class="toggles-right">
+                    <label class="check-pill">
+                        <input type="checkbox" id="chk-ellipses" checked />
+                        <span>Ellipses</span>
+                    </label>
                 </div>
             </div>
         </main>
 
-        <!-- Collapsible Advanced Settings & Hybrid Pipeline Drawer -->
-        <section id="advanced-drawer" class="card advanced-drawer hidden">
-            <div class="drawer-header">
-                <h2>⚙️ Advanced Configuration & Analytics</h2>
-                <button id="btn-close-advanced" class="btn text-btn">✕ Close</button>
-            </div>
+        <div class="plumb-axis" aria-hidden="true"></div>
 
-            <div class="drawer-grid">
-                <!-- Column 1: Target Setup & Hyperparameters -->
-                <div class="drawer-column">
-                    <h4>1. Target Setup & Hyperparameters</h4>
-                    <div class="form-group">
-                        <label for="image-select">Target Image Source</label>
-                        <select id="image-select" class="custom-select">
-                            <option value="multi-geometry" selected>🎨 3D Multi-Color Shapes (4-Frame Parallax)</option>
-                            <option value="planet-orbit">🪐 3D Solar System (4-Frame Orbit)</option>
-                            <option value="emoji-face">😊 3D Emoji Face (4-Frame Arc)</option>
-                            <option value="synthetic">🔴 Dual-View Benchmark (Circle 0° & 30°)</option>
-                            <option value="upload">📷 Upload Custom Photo Sequence (2 to 5 Photos)...</option>
-                        </select>
-                        <div id="custom-upload-container" class="hidden form-subgroup">
-                            <label>Select Multi-Photo Sequence:</label>
-                            <input type="file" id="image-upload-multi" accept="image/*" multiple>
-                        </div>
-                    </div>
-
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="num-gaussians">Num Gaussians (N)</label>
-                            <input type="number" id="num-gaussians" min="10" max="2000" value="500" class="custom-input">
-                        </div>
-
-                        <div class="form-group">
-                            <label for="lr-gaussian">GS LR</label>
-                            <input type="number" id="lr-gaussian" step="0.001" value="0.005" class="custom-input">
-                        </div>
-                        <div class="form-group">
-                            <label for="lr-nerf">NeRF LR</label>
-                            <input type="number" id="lr-nerf" step="0.0001" value="0.001" class="custom-input">
-                        </div>
-                    </div>
-
-                    <div class="form-row" style="grid-template-columns: 1fr 2fr;">
-                        <div class="form-group">
-                            <label for="nerf-seed-iters">🎓 NeRF Seeding Steps</label>
-                            <input type="number" id="nerf-seed-iters" min="50" max="2000" step="50" value="500" class="custom-input">
-                        </div>
-                        <div class="form-group" style="align-self: flex-end; font-size: 0.75rem; color: #64748b; padding-bottom: 0.35rem;">
-                            More steps → sharper edge map → better Gaussian seeding. Only used when 🎓 NeRF-Guided Seeding is enabled.
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Column 2: Guided Pipeline Concept -->
-                <div class="drawer-column">
-                    <h4>2. Hybrid Guided Concept</h4>
-                    <div class="form-group" style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.45;">
-                        <p style="margin-bottom: 0.5rem;"><strong>Why NeRF guides 3D GS?</strong></p>
-                        <p>Uniform random initialization creates floaters and artifacts. Seeding Gaussians along NeRF-derived spatial gradients forces 3D Gaussians to concentrate on true object surfaces!</p>
-                    </div>
-                </div>
-
-
-                <!-- Column 3: Loss Chart & Blend View -->
-                <div class="drawer-column">
-                    <h4>3. Analytics & Loss Convergence</h4>
-                    <div class="chart-container">
-                        <canvas id="canvas-chart" width="280" height="140"></canvas>
-                    </div>
-                    <div class="blend-container" style="margin-top: 10px;">
-                        <canvas id="canvas-blend" width="64" height="64" style="display:none;"></canvas>
-                        <input type="range" id="blend-slider" min="0" max="1" step="0.01" value="0.5" style="display:none;">
-                    </div>
-                </div>
-            </div>
-
-            <!-- Terminal Log Output -->
-            <div class="terminal-container">
-                <div class="terminal-header">Developer Console Log</div>
-                <div id="developer-console" class="terminal-body"></div>
-            </div>
+        <section id="architecture" class="insights-grid">
+            <article class="insight-box cobalt">
+                <span class="insight-kicker">01 · Volumetric Ray Marching</span>
+                <h4>Foreground-Balanced 3D Discovery</h4>
+                <p>98.6% of <code>[0,1]³</code> is empty air. Balancing foreground vs. sky rays with <code>8×</code> unit-cube extinction carves crisp 3D density <code>σ(x,y,z)</code> in 35 steps.</p>
+            </article>
+            <article class="insight-box">
+                <span class="insight-kicker">02 · Voxel-to-Splat Bridge</span>
+                <h4>3D Farthest-Point Seeding</h4>
+                <p>Active NeRF voxels seed all <code>N</code> Gaussians via <code>min_dist² · (0.4 + α)</code> so the planet core, 8 tilted ring nodes, and 2 moons all receive splats.</p>
+            </article>
+            <article class="insight-box teal">
+                <span class="insight-kicker">03 · Differentiable 3DGS</span>
+                <h4>Kerbl Decoupled Position LR</h4>
+                <p>Burn's <code>GradientsParams::from_params</code> steps <code>means</code> at <code>0.1×</code> appearance LR so Adam refines 3D geometry without kicking splats off-ring.</p>
+            </article>
         </section>
+
+        <details class="debug-panel">
+            <summary>02 · Telemetry Log &amp; Burn Backend Console</summary>
+            <div id="systemLogsBox">[System] Initializing Burn WebAssembly runtime...</div>
+        </details>
+
+        <footer>
+            <a href="https://magikerwin.github.io/">Kerwin Studio</a> · Built with <a href="https://burn.dev/" target="_blank" rel="noopener noreferrer">Burn</a> in Rust &amp; WebAssembly · <a href="https://github.com/magikerwin/burn-nerf-guided-splats" target="_blank" rel="noopener noreferrer">Source &amp; Benchmarks ↗</a>
+        </footer>
     </div>
 
-    <!-- WASM Entry Module -->
     <script type="module" src="index.js"></script>
 </body>
+
 </html>
