@@ -7,7 +7,7 @@
     <title>3D NeRF-Guided Gaussian Splatting — Kerwin Studio · Burn (Rust)</title>
     <meta name="description" content="Interactive 3D Volumetric Ray-Marched NeRF guiding 3D Gaussian Splatting in pure Rust, Burn, and WebAssembly." />
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2314151a'/%3E%3Ctext x='16' y='22' text-anchor='middle' fill='%23fdfbf6' font-family='system-ui,sans-serif' font-weight='800' font-size='18'%3EK%3C/text%3E%3C/svg%3E" />
-    <link rel="stylesheet" href="style.css?v=2" />
+    <link rel="stylesheet" href="style.css?v=3" />
 </head>
 
 <body>
@@ -75,7 +75,7 @@
 
         <main class="instrument-card">
             <div class="sec-head">
-                <span class="sec-kicker">01 · Head-to-Head 360° Turntable Instrument</span>
+                <span class="sec-kicker">01 · Live 360° Turntable Instrument</span>
                 <span id="step-pill" class="status-badge">STEP 0</span>
             </div>
 
@@ -173,26 +173,31 @@
 
         <div class="plumb-axis" aria-hidden="true"></div>
 
-        <section id="architecture" class="insights-grid">
-            <article class="insight-box cobalt">
-                <span class="insight-kicker">01 · Volumetric Ray Marching</span>
-                <h4>Foreground-Balanced 3D Discovery</h4>
-                <p>98.6% of <code>[0,1]³</code> is empty air. Balancing foreground vs. sky rays with <code>8×</code> unit-cube extinction carves crisp 3D density <code>σ(x,y,z)</code> in 35 steps.</p>
-            </article>
-            <article class="insight-box">
-                <span class="insight-kicker">02 · Voxel-to-Splat Bridge</span>
-                <h4>3D Farthest-Point Seeding</h4>
-                <p>Active NeRF voxels seed all <code>N</code> Gaussians via <code>min_dist² · (0.4 + α)</code> so the planet core, 8 tilted ring nodes, and 2 moons all receive splats.</p>
-            </article>
-            <article class="insight-box teal">
-                <span class="insight-kicker">03 · Differentiable 3DGS</span>
-                <h4>Kerbl Decoupled Position LR</h4>
-                <p>Burn's <code>GradientsParams::from_params</code> steps <code>means</code> at <code>0.1×</code> appearance LR so Adam refines 3D geometry without kicking splats off-ring.</p>
-            </article>
+        <section id="architecture" class="arch-section">
+            <div class="sec-head">
+                <span class="sec-kicker">02 · Pipeline Architecture</span>
+            </div>
+            <div class="insights-grid">
+                <article class="insight-box cobalt">
+                    <span class="insight-kicker">Volumetric Ray Marching</span>
+                    <h4>Foreground-Balanced 3D Discovery</h4>
+                    <p>98.6% of <code>[0,1]³</code> is empty air. Balancing foreground vs. sky rays with <code>8×</code> unit-cube extinction carves crisp 3D density <code>σ(x,y,z)</code> in 35 steps.</p>
+                </article>
+                <article class="insight-box">
+                    <span class="insight-kicker">Voxel-to-Splat Bridge</span>
+                    <h4>3D Farthest-Point Seeding</h4>
+                    <p>Active NeRF voxels seed all <code>N</code> Gaussians via <code>min_dist² · (0.4 + α)</code> so the planet core, 8 tilted ring nodes, and 2 moons all receive splats.</p>
+                </article>
+                <article class="insight-box teal">
+                    <span class="insight-kicker">Differentiable 3DGS</span>
+                    <h4>Kerbl Decoupled Position LR</h4>
+                    <p>Burn's <code>GradientsParams::from_params</code> steps <code>means</code> at <code>0.1×</code> appearance LR so Adam refines 3D geometry without kicking splats off-ring.</p>
+                </article>
+            </div>
         </section>
 
         <details class="debug-panel">
-            <summary>02 · Telemetry Log &amp; Burn Backend Console</summary>
+            <summary>03 · Telemetry Log &amp; Burn Backend Console</summary>
             <div id="systemLogsBox">[System] Initializing Burn WebAssembly runtime...</div>
         </details>
 
@@ -201,7 +206,7 @@
         </footer>
     </div>
 
-    <script type="module" src="index.js"></script>
+    <script type="module" src="index.js?v=3"></script>
 </body>
 
 </html>
