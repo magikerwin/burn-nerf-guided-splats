@@ -147,7 +147,7 @@ fn main() {
         .collect();
 
     println!(
-        "=== True 3D Saturn Benchmark (13-Part 3D Ringed Planet, 4 Train + 4 Novel 360° Views, N={}) ===",
+        "=== True 3D Saturn Benchmark (11-Part 3D Ringed Planet, 4 Train + 4 Novel 360° Views, N={}) ===",
         n_splats
     );
     let psnr = |m: f32| -10.0 * m.max(1e-8).log10();

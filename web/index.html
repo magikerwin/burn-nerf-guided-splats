@@ -2,34 +2,57 @@
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Interactive 3D Volumetric Ray-Marched NeRF guiding 3D Gaussian Splatting in pure Rust, Burn, and WebAssembly.">
-    <title>Burn 3D NeRF-Guided Splats</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>3D NeRF-Guided Gaussian Splatting — Kerwin Studio · Burn (Rust)</title>
+    <meta name="description" content="Interactive 3D Volumetric Ray-Marched NeRF guiding 3D Gaussian Splatting in pure Rust, Burn, and WebAssembly." />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2314151a'/%3E%3Ctext x='16' y='22' text-anchor='middle' fill='%23fdfbf6' font-family='system-ui,sans-serif' font-weight='800' font-size='18'%3EK%3C/text%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="style.css" />
 </head>
 
 <body>
-    <a class="gh-link" href="https://github.com/magikerwin/burn-nerf-guided-splats" target="_blank" rel="noopener noreferrer" aria-label="View Source on GitHub">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 00-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0020 4.77 5.07 5.07 0 0019.91 1S18.73.65 16 2.48a13.38 13.38 0 00-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 005 4.77a5.44 5.44 0 00-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 009 18.13V22" />
-        </svg>
-    </a>
+    <div class="shell">
+        <nav class="top-bar" aria-label="Studio Navigation">
+            <div class="brand-group">
+                <a class="brand-mark" href="https://magikerwin.github.io/" aria-label="Kerwin Studio Home">K</a>
+                <a class="brand-crumb" href="https://magikerwin.github.io/">KERWIN <span>/ BURN-3DGS</span></a>
+            </div>
+            <div class="top-nav">
+                <a class="nav-link" href="#architecture">Notes</a>
+                <a class="nav-link" href="https://github.com/magikerwin/burn-nerf-guided-splats" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+            </div>
+        </nav>
 
-    <div class="container">
-        <header>
-            <h1>Burn 3D NeRF-Guided Splats</h1>
-            <p>
-                Coarse 3D Volumetric Ray-Marched NeRF <code>(x,y,z) → (RGB, σ)</code> guiding explicit 3D Gaussian Splatting in pure Rust &amp; WebAssembly.
-            </p>
+        <header class="studio-hero">
+            <svg class="orbital-reticle" viewBox="0 0 400 400" aria-hidden="true">
+                <circle cx="200" cy="200" r="95" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="3 6" />
+                <circle cx="200" cy="200" r="150" fill="none" stroke="currentColor" stroke-width="1" />
+                <circle cx="200" cy="200" r="192" fill="none" stroke="currentColor" stroke-width="1" opacity="0.55" />
+                <line x1="200" y1="8" x2="200" y2="34" stroke="currentColor" stroke-width="1.2" />
+                <line x1="200" y1="366" x2="200" y2="392" stroke="currentColor" stroke-width="1.2" />
+                <line x1="8" y1="200" x2="34" y2="200" stroke="currentColor" stroke-width="1.2" />
+                <line x1="366" y1="200" x2="392" y2="200" stroke="currentColor" stroke-width="1.2" />
+            </svg>
 
-            <div class="top-pills-row">
+            <div class="hero-top">
+                <div class="telemetry-pill">
+                    <span class="telemetry-dot"></span>
+                    <span>LAB · DIFFERENTIABLE 3D VISION · RUST + BURN 0.21</span>
+                </div>
+                <span id="backend-pill" class="status-badge">⏳ LOADING WASM...</span>
+            </div>
+
+            <div class="hero-copy">
+                <h1>3D NeRF-Guided Gaussian Splatting</h1>
+                <p>
+                    Coarse 3D Volumetric Ray-Marched NeRF <code>(x,y,z) → (RGB, σ)</code> carves sparse 3D matter inside <code>[0,1]³</code> to seed explicit 3D Gaussian Splatting in real time.
+                </p>
+            </div>
+
+            <div class="selector-deck">
                 <div class="selector-container">
                     <span class="selector-label">Views
-                        <button type="button" class="info-trigger" data-tooltip="Number of calibrated 360° camera views K used to supervise 3D reconstruction. K=2 suffers epipolar ambiguity; K=4 or K=8 triangulates the full 3D ring.">?</button>
+                        <button type="button" class="info-trigger" data-tooltip="Calibrated 360° camera views K supervising 3D reconstruction. K=2 exhibits epipolar ambiguity; K=4 or K=8 triangulates the full 3D ring.">?</button>
                     </span>
                     <div class="tabs" id="view-tabs">
                         <button type="button" class="tab-btn" data-views="2">2 Views</button>
@@ -40,25 +63,28 @@
 
                 <div class="selector-container">
                     <span class="selector-label">Budget
-                        <button type="button" class="info-trigger" data-tooltip="Total 3D Gaussians N inside [0, 1]³. At sparse budgets (N=26), random 3D splats miss thin 3D rings while NeRF-seeded splats lock onto every structure.">?</button>
+                        <button type="button" class="info-trigger" data-tooltip="Total 3D Gaussians N inside [0, 1]³. At sparse budgets (N=26), random 3D splats miss thin rings while NeRF-seeded splats lock onto every body.">?</button>
                     </span>
                     <div class="tabs" id="budget-tabs">
                         <button type="button" class="tab-btn active" data-n="26">26 Splats</button>
                         <button type="button" class="tab-btn" data-n="48">48 Splats</button>
                     </div>
                 </div>
-
-                <span id="backend-pill" class="status-badge">⏳ Loading Burn WASM...</span>
             </div>
         </header>
 
-        <main class="card">
+        <main class="instrument-card">
+            <div class="sec-head">
+                <span class="sec-kicker">01 · Head-to-Head 360° Turntable Instrument</span>
+                <span id="step-pill" class="status-badge">STEP 0</span>
+            </div>
+
             <div class="stages-grid">
-                <!-- 1. Ground Truth 3D Saturn -->
+                <!-- 1. Ground Truth -->
                 <div class="stage-tile">
                     <div class="stage-header">
                         <span class="stage-title">1. Target (GT)
-                            <button type="button" class="info-trigger" data-tooltip="True 3D Saturn System inside [0, 1]³: 1 golden core + 8 tilted 3D ring nodes + 2 outer moons (~98.6% empty 3D space).">?</button>
+                            <button type="button" class="info-trigger" data-tooltip="11-body 3D Saturn System inside [0, 1]³: golden core + 8 tilted 3D ring nodes + 2 moons (~98.6% empty air).">?</button>
                         </span>
                         <span id="pill-gt" class="metric-pill neutral">K=4 · 3D</span>
                     </div>
@@ -67,11 +93,11 @@
                         <canvas id="cv-gt" class="pix" width="44" height="44"></canvas>
                         <canvas id="ov-gt" class="ov" width="176" height="176"></canvas>
                     </div>
-                    <p class="stage-caption">11-part 3D Saturn + tilted ring + 2 moons with front/back occlusion.</p>
+                    <p class="stage-caption">11-part 3D Saturn + tilted ring + 2 moons with occlusion.</p>
                 </div>
 
-                <!-- 2. True 3D Volumetric NeRF -->
-                <div class="stage-tile nerf-tile">
+                <!-- 2. 3D Volumetric NeRF -->
+                <div class="stage-tile">
                     <div class="stage-header">
                         <span class="stage-title">2. 3D NeRF
                             <button type="button" class="info-trigger" data-tooltip="VolumetricNerfModel marches 14 depth samples per ray across coarse 16×16 views to discover 3D density σ(x,y,z) in 35 warmup steps.">?</button>
@@ -83,14 +109,14 @@
                         <canvas id="cv-nerf" class="pix" width="28" height="28"></canvas>
                         <canvas id="ov-nerf" class="ov" width="176" height="176"></canvas>
                     </div>
-                    <p class="stage-caption">Ray-marches <code>[0,1]³</code> to carve dense 3D voxels <code>σ(x,y,z)</code>.</p>
+                    <p class="stage-caption">Ray-marches <code>[0,1]³</code> to locate dense <code>σ(x,y,z)</code> voxels.</p>
                 </div>
 
                 <!-- 3. Blind 3DGS -->
-                <div class="stage-tile blind-tile">
+                <div class="stage-tile">
                     <div class="stage-header">
                         <span class="stage-title">3. Blind 3DGS
-                            <button type="button" class="info-trigger" data-tooltip="Trains from Step 1 with random 3D positions in [0,1]³. Splats stranded in empty space vanish or overfit 2D silhouettes at wrong 3D depths.">?</button>
+                            <button type="button" class="info-trigger" data-tooltip="Trains from Step 1 with random 3D coordinates. Splats stranded in empty space vanish or overfit 2D silhouettes at wrong 3D depths.">?</button>
                         </span>
                         <span id="score-blind" class="metric-pill blind">-- dB</span>
                     </div>
@@ -99,14 +125,14 @@
                         <canvas id="cv-blind" class="pix" width="44" height="44"></canvas>
                         <canvas id="ov-blind" class="ov" width="176" height="176"></canvas>
                     </div>
-                    <p class="stage-caption">Random 3D init misses sparse 3D rings and drifts on novel angles.</p>
+                    <p class="stage-caption">Random 3D init misses thin rings and drifts on rotation.</p>
                 </div>
 
-                <!-- 4. 3D Volumetric-Guided 3DGS -->
+                <!-- 4. Guided 3DGS -->
                 <div class="stage-tile guided-tile">
                     <div class="stage-header">
                         <span class="stage-title">4. Guided 3DGS
-                            <button type="button" class="info-trigger" data-tooltip="Spawns all N Gaussians onto active 3D NeRF voxels via farthest-point selection, then refines with Kerbl-style decoupled position LR (lr_pos = 0.1× lr_color).">?</button>
+                            <button type="button" class="info-trigger" data-tooltip="Farthest-point active-voxel seeding spawns all N Gaussians onto the 3D ring, refined with Kerbl-style decoupled position LR (0.1×).">?</button>
                         </span>
                         <span id="score-guided" class="metric-pill guided">Wait</span>
                     </div>
@@ -115,7 +141,7 @@
                         <canvas id="cv-guided" class="pix" width="44" height="44"></canvas>
                         <canvas id="ov-guided" class="ov" width="176" height="176"></canvas>
                     </div>
-                    <p class="stage-caption">Farthest-point 3D σ-voxel seeding + Kerbl LR locks onto the 3D ring.</p>
+                    <p class="stage-caption">Farthest-point <code>σ</code> seeding + Kerbl LR locks onto 3D ring.</p>
                 </div>
             </div>
 
@@ -128,46 +154,50 @@
                 <div class="sliders-row">
                     <div class="slider-field">
                         <label for="yaw-slider">360° Yaw</label>
-                        <input type="range" id="yaw-slider" min="-3.14" max="3.14" step="0.04" value="0.55">
+                        <input type="range" id="yaw-slider" min="-3.14" max="3.14" step="0.04" value="0.55" />
                     </div>
                     <div class="slider-field">
                         <label for="pitch-slider">3D Tilt</label>
-                        <input type="range" id="pitch-slider" min="-0.85" max="0.85" step="0.04" value="0.26">
+                        <input type="range" id="pitch-slider" min="-0.85" max="0.85" step="0.04" value="0.26" />
                     </div>
                 </div>
 
                 <div class="toggles-right">
                     <label class="check-pill">
-                        <input type="checkbox" id="chk-ellipses" checked>
-                        <span>3D Ellipses</span>
+                        <input type="checkbox" id="chk-ellipses" checked />
+                        <span>Ellipses</span>
                     </label>
-                    <span id="step-pill" class="status-badge">Step 0</span>
                 </div>
             </div>
         </main>
 
-        <section class="insights-grid">
-            <div class="insight-box">
-                <h4>1. Volumetric 3D Discovery</h4>
-                <p>98.6% of <code>[0,1]³</code> is empty air. Foreground-balanced 3D rays find dense matter <code>σ(x,y,z)</code> everywhere instead of stranding splats in the void.</p>
-            </div>
-            <div class="insight-box">
-                <h4>2. 3D Farthest-Point Seeding</h4>
-                <p>Active NeRF voxels seed all <code>N</code> Gaussians via <code>min_dist² · (0.4 + α)</code> so the planet core, 8 ring nodes, and 2 moons all receive coverage.</p>
-            </div>
-            <div class="insight-box">
-                <h4>3. Kerbl Decoupled Position LR</h4>
-                <p>Burn's <code>GradientsParams::from_params</code> steps <code>means</code> at <code>0.1×</code> color/opacity LR so Adam refines seeded 3D geometry without kicking splats off-ring.</p>
-            </div>
+        <div class="plumb-axis" aria-hidden="true"></div>
+
+        <section id="architecture" class="insights-grid">
+            <article class="insight-box cobalt">
+                <span class="insight-kicker">01 · Volumetric Ray Marching</span>
+                <h4>Foreground-Balanced 3D Discovery</h4>
+                <p>98.6% of <code>[0,1]³</code> is empty air. Balancing foreground vs. sky rays with <code>8×</code> unit-cube extinction carves crisp 3D density <code>σ(x,y,z)</code> in 35 steps.</p>
+            </article>
+            <article class="insight-box">
+                <span class="insight-kicker">02 · Voxel-to-Splat Bridge</span>
+                <h4>3D Farthest-Point Seeding</h4>
+                <p>Active NeRF voxels seed all <code>N</code> Gaussians via <code>min_dist² · (0.4 + α)</code> so the planet core, 8 tilted ring nodes, and 2 moons all receive splats.</p>
+            </article>
+            <article class="insight-box teal">
+                <span class="insight-kicker">03 · Differentiable 3DGS</span>
+                <h4>Kerbl Decoupled Position LR</h4>
+                <p>Burn's <code>GradientsParams::from_params</code> steps <code>means</code> at <code>0.1×</code> appearance LR so Adam refines 3D geometry without kicking splats off-ring.</p>
+            </article>
         </section>
 
         <details class="debug-panel">
-            <summary>Developer Console &amp; Burn Telemetry</summary>
-            <div id="systemLogsBox">[System] Initializing Burn WebAssembly module...</div>
+            <summary>02 · Telemetry Log &amp; Burn Backend Console</summary>
+            <div id="systemLogsBox">[System] Initializing Burn WebAssembly runtime...</div>
         </details>
 
         <footer>
-            Built with <a href="https://burn.dev/" target="_blank" rel="noopener noreferrer">Burn</a> in pure Rust &amp; WebAssembly · <a href="https://github.com/magikerwin/burn-nerf-guided-splats" target="_blank" rel="noopener noreferrer">View Source &amp; Benchmarks</a>
+            <a href="https://magikerwin.github.io/">Kerwin Studio</a> · Built with <a href="https://burn.dev/" target="_blank" rel="noopener noreferrer">Burn</a> in Rust &amp; WebAssembly · <a href="https://github.com/magikerwin/burn-nerf-guided-splats" target="_blank" rel="noopener noreferrer">Source &amp; Benchmarks ↗</a>
         </footer>
     </div>
 

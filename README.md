@@ -1,5 +1,10 @@
 # 🪐 3D NeRF-Guided Gaussian Splatting — Burn (Rust)
 
+[![Deploy to GitHub Pages](https://github.com/magikerwin/burn-nerf-guided-splats/actions/workflows/deploy.yml/badge.svg)](https://github.com/magikerwin/burn-nerf-guided-splats/actions/workflows/deploy.yml)
+[![Burn 0.21](https://img.shields.io/badge/Burn-0.21-e8431f?logo=rust)](https://burn.dev/)
+[![WebAssembly + WebGPU](https://img.shields.io/badge/WebAssembly-WebGPU%20%2B%20CPU-1e4dd8?logo=webassembly)](https://magikerwin.github.io/burn-nerf-guided-splats/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-0b7a75.svg)](./LICENSE)
+
 > An interactive, browser-based 3D differentiable rendering engine combining **Volumetric Ray-Marched Neural Radiance Fields (NeRF)** and **3D Gaussian Splatting (3DGS)** built with the [Burn](https://burn.dev/) deep learning framework in Rust. Watch a coarse 3D NeRF discover volumetric density $\sigma(x, y, z)$ to guide explicit 3D Gaussian Splatting right in your browser!
 >
 > 🚀 **[Try the Live WebAssembly Demo!](https://magikerwin.github.io/burn-nerf-guided-splats/)**
@@ -14,7 +19,7 @@
 - [Model Architecture](#️-model-architecture)
 - [Project Structure](#-project-structure)
 - [Getting Started](#-getting-started)
-  - [Run Benchmarks & Progressive Examples](#run-benchmarks--progressive-examples)
+  - [Run CLI Showcase & Benchmarks](#run-cli-showcase--benchmarks)
   - [Run Tests](#run-tests)
   - [Client-Side WebAssembly App (WASM)](#client-side-webassembly-app-wasm)
 - [3D Saturn Scene & Hybrid Tuning Details](#-3d-saturn-scene--hybrid-tuning-details)
@@ -31,7 +36,7 @@
 - **Kerbl-Style Decoupled Parameter-Group Learning Rates** — Uses Burn's `GradientsParams::from_params` to step 3D positions (`lr_means = 0.10 × base_lr`) and scales (`0.30 × base_lr`) more gently than color/opacity logits (`1.0 × base_lr`), preventing Adam from kicking newly seeded splats off 3D surfaces.
 - **Instant-NGP Foreground/Sky Ray Balancing** — Balances foreground object rays against empty-sky carving rays (`1 + 6 · target_rgb`) with an $8\times$ unit-cube optical extinction scale so sparse 3D structures solidify within ~35 warmup steps.
 - **Dual WebGPU + CPU WASM Execution** — Runs hardware-accelerated client-side training via `Autodiff<Wgpu>` when WebGPU is available, and automatically falls back to `Autodiff<Flex>` CPU WebAssembly on browsers without WebGPU.
-- **Interactive Educational Tooltips & Developer Console** — Inline `?` parameter tooltips, live 3D Gaussian ellipse overlays, configurable camera views (`K = 2, 4, 8`) and splat budgets (`N = 26, 48`), and real-time Burn telemetry.
+- **Space-Age Industrial Studio UI** — Tactile lunar-ceramic chassis (`#f4f0e6`) paired with obsidian CRT 3D viewports (`#14151a`), inline `?` parameter tooltips, live 3D Gaussian ellipse overlays, configurable camera views (`K = 2, 4, 8`) and splat budgets (`N = 26, 48`), and real-time Burn telemetry.
 - **Fully in Rust** — Differentiable ray marcher, depth-sorted 3D splat rasterizer, hybrid voxel bridge, CLI benchmarks, and WebAssembly bindings in a single crate.
 
 ---
@@ -77,7 +82,7 @@ Stage 3 — Explicit Depth-Sorted 3D Gaussian Splatting Refinement
 burn-nerf-guided-splats/
 ├── src/
 │   ├── lib.rs              # Crate root exporting model, training, hybrid, utils, & wasm modules
-│   ├── main.rs             # Native CLI image-fitting runner & PNG exporter
+│   ├── main.rs             # Flagship 3D Saturn CLI runner (Flex CPU default / --gpu Wgpu) & PNG exporter
 │   ├── model/
 │   │   ├── mod.rs          # ImageFitter & MultiViewFitter trait definitions
 │   │   ├── gaussian.rs     # Depth-sorted 3D Gaussian Splatting & turntable projection
@@ -90,9 +95,9 @@ burn-nerf-guided-splats/
 │   ├── 01_single_splat.rs      # Minimal ~40-line Burn autodiff Gaussian Splatting intro
 │   ├── 02_spectral_bias.rs     # Spectral Bias Lab: L=0 (raw coords) vs L=8 (Fourier PE)
 │   └── 03_hybrid_benchmark.rs  # Fair 3D Saturn benchmark: Blind 3DGS vs Volumetric-Guided 3DGS
-├── web/                    # Static WebAssembly frontend (served by GitHub Pages)
-│   ├── index.html          # 4-stage 3D turntable race UI, tooltips, & Developer Console
-│   ├── style.css           # Responsive dark Burn theme (desktop 4-up / mobile 2×2 scroll-safe)
+├── web/                    # Zero-build static WebAssembly frontend (served by GitHub Pages)
+│   ├── index.html          # Space-Age Studio 4-stage 3D turntable instrument & console
+│   ├── style.css           # Lunar-ceramic + Module Obsidian responsive tokens & layout
 │   ├── index.js            # GpuTaskQueue mutex, live 3D ellipse overlay, & race loop
 │   └── pkg/                # Compiled WASM output (gitignored, built automatically in CI)
 └── assets/
@@ -103,9 +108,21 @@ burn-nerf-guided-splats/
 
 ## 🚀 Getting Started
 
-### Run Benchmarks & Progressive Examples
+### Run CLI Showcase & Benchmarks
 
-Step through the three self-contained educational examples (uses Burn's fast `Autodiff<Flex>` CPU backend out of the box—no GPU setup required):
+By default, the CLI runs on the fast `Autodiff<Flex>` CPU backend (works out of the box everywhere) and exports `128×128` novel-view renders (`target.png`, `output_nerf.png`, `output_blind_3dgs.png`, `output_guided_3dgs.png`):
+
+```sh
+cargo run --release
+```
+
+To accelerate on your GPU (`Autodiff<Wgpu>` backend):
+
+```sh
+cargo run --release -- --gpu
+```
+
+You can also step through the three progressive educational examples:
 
 ```sh
 # 1. Minimal Burn Autodiff Gaussian Splatting intro
@@ -116,12 +133,6 @@ cargo run --release --example 02_spectral_bias
 
 # 3. True 3D Saturn Benchmark: Blind 3DGS vs Volumetric Ray-Marched NeRF-Guided 3DGS
 cargo run --release --example 03_hybrid_benchmark
-```
-
-To run the full native multi-view exporter (`target.png`, `output_gaussian.png`, `output_nerf.png`):
-
-```sh
-cargo run --release
 ```
 
 #### 📊 Results
@@ -139,7 +150,7 @@ Evaluated on the **11-part 3D Saturn + Tilted Ring + 2 Moons** scene inside $[0,
 
 ```text
 $ cargo run --release --example 03_hybrid_benchmark
-=== True 3D Saturn Benchmark (13-Part 3D Ringed Planet, 4 Train + 4 Novel 360° Views, N=26) ===
+=== True 3D Saturn Benchmark (11-Part 3D Ringed Planet, 4 Train + 4 Novel 360° Views, N=26) ===
   1. Blind 3DGS (Uniform LR)   [ 6392 ms]: Train PSNR = 21.24 dB | Novel 360° PSNR = 20.26 dB
   2. Blind 3DGS (Kerbl LR)     [ 6556 ms]: Train PSNR = 21.53 dB | Novel 360° PSNR = 19.54 dB
   3. 3D Volumetric-Guided 3DGS [ 6114 ms]: Train PSNR = 23.55 dB | Novel 360° PSNR = 23.45 dB (+3.18 dB vs best Blind!)

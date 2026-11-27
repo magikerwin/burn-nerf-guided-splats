@@ -29,6 +29,8 @@ target
 target.png
 output_gaussian.png
 output_nerf.png
+output_blind_3dgs.png
+output_guided_3dgs.png
 
 # Ignore compiled WASM packages locally
 web/pkg/
