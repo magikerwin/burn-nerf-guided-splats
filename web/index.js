@@ -1,19 +1,8 @@
 import init, {
     create_turntable_3d_session,
-    init_panic_hook,
-    init_webgpu
+    init_panic_hook
 } from './pkg/burn_nerf_guided_splats.js';
 
-class GpuTaskQueue {
-    constructor() { this.chain = Promise.resolve(); }
-    async run(fn) {
-        const next = this.chain.then(fn);
-        this.chain = next.catch(err => console.error('[GpuTaskQueue]', err));
-        return next;
-    }
-}
-
-const gpuQueue = new GpuTaskQueue();
 const W = 44, H = 44, NW = 28, NH = 28, OV = 176, WARMUP = 35;
 
 // 11-Part True 3D Saturn System inside [0, 1]^3: Golden Core + 8 Tilted 3D Ring Nodes + 2 Moons
@@ -35,6 +24,7 @@ const ALL_POSES = [
 ];
 
 let session = null;
+let wasmReady = false;
 let isRacing = false;
 let loopBusy = false;
 let seeded = false;
@@ -133,7 +123,7 @@ function drawOverlay(ovId, splatDesc) {
         [lo, lo, hi], [hi, lo, hi], [hi, hi, hi], [lo, hi, hi]
     ].map(p => project3d(p[0], p[1], p[2], yaw, pitch));
 
-    c.strokeStyle = 'rgba(148, 163, 184, 0.30)';
+    c.strokeStyle = 'rgba(215, 212, 203, 0.28)';
     c.lineWidth = 1.1;
     c.beginPath();
     [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]].forEach(([a, b]) => {
@@ -173,9 +163,9 @@ async function renderAllStages() {
     const gtRgb = renderTrue3dFrame(W, H, yaw, pitch);
     paintRgb('cv-gt', W, H, gtRgb);
     drawOverlay('ov-gt', null);
+    drawOverlay('ov-nerf', null);
 
     if (!session) {
-        drawOverlay('ov-nerf', null);
         drawOverlay('ov-blind', null);
         drawOverlay('ov-guided', null);
         return;
@@ -187,7 +177,6 @@ async function renderAllStages() {
 
     paintRgb('cv-nerf', NW, NH, nRgb);
     paintRgb('cv-blind', W, H, bRgb);
-    drawOverlay('ov-nerf', null);
     drawOverlay('ov-blind', bSplats);
 
     const dbB = computePsnrFromU8(bRgb, gtRgb);
@@ -208,13 +197,11 @@ async function renderAllStages() {
     }
 }
 
-async function resetSession() {
+async function resetSession(autoStartAfter = false) {
     isRacing = false;
     seeded = false;
     step = 0;
-    btnRace.textContent = '▶ Start Fair 3D Race';
-    btnRace.classList.remove('running');
-    stepPill.textContent = 'Step 0';
+    stepPill.textContent = 'STEP 0';
     document.getElementById('pill-gt').textContent = `K=${numViews} · 3D`;
     document.getElementById('status-nerf').textContent = `0/${WARMUP}`;
     document.getElementById('bar-nerf').style.width = '0%';
@@ -224,8 +211,13 @@ async function resetSession() {
     document.getElementById('bar-guided').style.width = '0%';
 
     const gCtx = document.getElementById('cv-guided').getContext('2d');
-    gCtx.fillStyle = '#06070b';
+    gCtx.fillStyle = '#0a0b0e';
     gCtx.fillRect(0, 0, W, H);
+
+    if (!wasmReady) {
+        await renderAllStages();
+        return;
+    }
 
     const activePoses = ALL_POSES.slice(0, numViews);
     const frameLen = W * H * 3;
@@ -239,22 +231,28 @@ async function resetSession() {
         flatRgb.set(renderTrue3dFrame(W, H, yw, pt), k * frameLen);
     }
 
-    await gpuQueue.run(async () => {
-        session = create_turntable_3d_session(W, H, numSplats, flatRgb, flatPoses);
-        await renderAllStages();
-    });
-
+    session = create_turntable_3d_session(W, H, numSplats, flatRgb, flatPoses);
+    await renderAllStages();
     logLine(`Session ready: K=${numViews} turntable views, N=${numSplats} 3D Gaussians (${session.get_backend_name()}).`);
+
+    if (autoStartAfter) {
+        isRacing = true;
+        btnRace.textContent = '⏸ Pause 3D Race';
+        btnRace.classList.add('running');
+        requestAnimationFrame(raceLoop);
+    } else {
+        btnRace.textContent = '▶ Start Fair 3D Race';
+        btnRace.classList.remove('running');
+    }
 }
 
 async function raceLoop() {
     if (loopBusy || !isRacing || !session) return;
     loopBusy = true;
 
-    await gpuQueue.run(async () => {
-        if (!isRacing || !session) return;
+    try {
         step++;
-        stepPill.textContent = `Step ${step}`;
+        stepPill.textContent = `STEP ${step}`;
 
         if (!userAdjustingCamera) {
             yaw = ((yaw + 0.025 + Math.PI) % (2 * Math.PI)) - Math.PI;
@@ -263,14 +261,14 @@ async function raceLoop() {
 
         if (step <= WARMUP) {
             session.step_3d_warmup_fair(0.075, 0.026);
-            document.getElementById('status-nerf').textContent = `Rays ${step}/${WARMUP}`;
+            document.getElementById('status-nerf').textContent = `${step}/${WARMUP}`;
             document.getElementById('bar-nerf').style.width = `${Math.round((step / WARMUP) * 100)}%`;
 
             if (step === WARMUP) {
                 const voxels = await session.seed_from_3d_vol_nerf();
                 seeded = true;
                 document.getElementById('status-nerf').textContent = '✓ σ Seeded';
-                logLine(`Step ${step}: Extracted ${(voxels.length / 7) | 0} 3D voxels & seeded N=${numSplats} Gaussians via farthest-point selection.`);
+                logLine(`Step ${step}: Extracted ${(voxels.length / 7) | 0} 3D voxels & seeded N=${numSplats} Gaussians.`);
             }
         } else {
             session.step_3d_race_fast(0.075);
@@ -279,17 +277,34 @@ async function raceLoop() {
         if (step % 2 === 0 || step === WARMUP) {
             await renderAllStages();
         }
-    });
+    } catch (err) {
+        console.error('[RaceLoop Error]', err);
+        logLine(`Error: ${err}`);
+        isRacing = false;
+        btnRace.textContent = '▶ Resume 3D Race';
+        btnRace.classList.remove('running');
+    } finally {
+        loopBusy = false;
+    }
 
-    loopBusy = false;
     if (isRacing) {
-        await new Promise(r => setTimeout(r, 8));
-        requestAnimationFrame(raceLoop);
+        setTimeout(() => requestAnimationFrame(raceLoop), 12);
     }
 }
 
 async function main() {
+    // 1. Paint Ground Truth + all 4 wire-cubes immediately before WASM finishes downloading!
+    btnRace.disabled = true;
+    btnRace.textContent = '⏳ Loading WASM...';
+    await renderAllStages();
+
+    let pendingStartClick = false;
+
     btnRace.onclick = () => {
+        if (!wasmReady || !session) {
+            pendingStartClick = true;
+            return;
+        }
         isRacing = !isRacing;
         btnRace.textContent = isRacing ? '⏸ Pause 3D Race' : (step > 0 ? '▶ Resume 3D Race' : '▶ Start Fair 3D Race');
         btnRace.classList.toggle('running', isRacing);
@@ -298,14 +313,14 @@ async function main() {
 
     btnReset.onclick = () => {
         userAdjustingCamera = false;
-        resetSession();
+        resetSession(false);
     };
 
     document.querySelectorAll('#view-tabs .tab-btn').forEach(btn => {
         btn.onclick = async () => {
             numViews = parseInt(btn.dataset.views, 10);
             document.querySelectorAll('#view-tabs .tab-btn').forEach(b => b.classList.toggle('active', b === btn));
-            await resetSession();
+            await resetSession(false);
         };
     });
 
@@ -313,35 +328,42 @@ async function main() {
         btn.onclick = async () => {
             numSplats = parseInt(btn.dataset.n, 10);
             document.querySelectorAll('#budget-tabs .tab-btn').forEach(b => b.classList.toggle('active', b === btn));
-            await resetSession();
+            await resetSession(false);
         };
     });
 
     yawSlider.addEventListener('input', e => {
         userAdjustingCamera = true;
         yaw = parseFloat(e.target.value);
-        if (!isRacing) gpuQueue.run(renderAllStages);
+        if (!isRacing) renderAllStages();
     });
     yawSlider.addEventListener('change', () => { userAdjustingCamera = false; });
 
     pitchSlider.addEventListener('input', e => {
         userAdjustingCamera = true;
         pitch = parseFloat(e.target.value);
-        if (!isRacing) gpuQueue.run(renderAllStages);
+        if (!isRacing) renderAllStages();
     });
     pitchSlider.addEventListener('change', () => { userAdjustingCamera = false; });
 
     chkEllipses.addEventListener('change', e => {
         showEllipses = e.target.checked;
-        if (!isRacing) gpuQueue.run(renderAllStages);
+        if (!isRacing) renderAllStages();
     });
 
-    await init();
-    init_panic_hook();
-    const hasGpu = await init_webgpu();
-    backendPill.textContent = hasGpu ? '⚡ Burn WebGPU' : '🖥️ Burn CPU WASM';
-    logLine(`Burn runtime initialized (${hasGpu ? 'WebGPU hardware acceleration' : 'Flex CPU WASM fallback'}).`);
-    await resetSession();
+    try {
+        await init({ module_or_path: './pkg/burn_nerf_guided_splats_bg.wasm?v=2' });
+        init_panic_hook();
+        wasmReady = true;
+        btnRace.disabled = false;
+        backendPill.textContent = '⚡ BURN WASM READY';
+        logLine('Burn Flex WebAssembly engine initialized.');
+        await resetSession(pendingStartClick);
+    } catch (err) {
+        console.error('[WASM Init Error]', err);
+        backendPill.textContent = '⚠️ WASM LOAD FAILED';
+        logLine(`WASM initialization error: ${err}`);
+    }
 }
 
 main();
