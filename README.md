@@ -2,7 +2,7 @@
 
 [![Deploy to GitHub Pages](https://github.com/magikerwin/burn-nerf-guided-splats/actions/workflows/deploy.yml/badge.svg)](https://github.com/magikerwin/burn-nerf-guided-splats/actions/workflows/deploy.yml)
 [![Burn 0.21](https://img.shields.io/badge/Burn-0.21-e8431f?logo=rust)](https://burn.dev/)
-[![WebAssembly + WebGPU](https://img.shields.io/badge/WebAssembly-WebGPU%20%2B%20CPU-1e4dd8?logo=webassembly)](https://magikerwin.github.io/burn-nerf-guided-splats/)
+[![WebAssembly](https://img.shields.io/badge/WebAssembly-Client--Side-1e4dd8?logo=webassembly)](https://magikerwin.github.io/burn-nerf-guided-splats/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-0b7a75.svg)](./LICENSE)
 
 > An interactive, browser-based 3D differentiable rendering engine combining **Volumetric Ray-Marched Neural Radiance Fields (NeRF)** and **3D Gaussian Splatting (3DGS)** built with the [Burn](https://burn.dev/) deep learning framework in Rust. Watch a coarse 3D NeRF discover volumetric density `σ(x, y, z)` to guide explicit 3D Gaussian Splatting right in your browser!
@@ -35,7 +35,7 @@
 - **Farthest-Point 3D Voxel Seeding** — Samples active 3D NeRF density voxels (`α ≥ τ`) using density-weighted 3D farthest-point selection (`min_dist² · (0.4 + α)`) so thin 3D rings, planet cores, and distant moons all receive balanced 3D Gaussian coverage.
 - **Kerbl-Style Decoupled Parameter-Group Learning Rates** — Uses Burn's `GradientsParams::from_params` to step 3D positions (`lr_means = 0.10 × base_lr`) and scales (`0.30 × base_lr`) more gently than color/opacity logits (`1.0 × base_lr`), preventing Adam from kicking newly seeded splats off 3D surfaces.
 - **Instant-NGP Foreground/Sky Ray Balancing** — Balances foreground object rays against empty-sky carving rays (`1 + 6 · target_rgb`) with an `8×` unit-cube optical extinction scale so sparse 3D structures solidify within ~35 warmup steps.
-- **Dual WebGPU + CPU WASM Execution** — Runs hardware-accelerated client-side training via `Autodiff<Wgpu>` when WebGPU is available, and automatically falls back to `Autodiff<Flex>` CPU WebAssembly on browsers without WebGPU.
+- **Universal Mobile-First WebAssembly + Native WGPU** — Runs lightweight `Autodiff<Flex>` WebAssembly directly in any mobile or desktop browser (zero WebGPU driver quirks or shader stalls), plus hardware-accelerated `Autodiff<Wgpu>` via `--gpu` in the native CLI.
 - **Space-Age Industrial Studio UI** — Tactile lunar-ceramic chassis (`#f4f0e6`) paired with obsidian CRT 3D viewports (`#14151a`), inline `?` parameter tooltips, live 3D Gaussian ellipse overlays, configurable camera views (`K = 2, 4, 8`) and splat budgets (`N = 26, 48`), and real-time Burn telemetry.
 - **Fully in Rust** — Differentiable ray marcher, depth-sorted 3D splat rasterizer, hybrid voxel bridge, CLI benchmarks, and WebAssembly bindings in a single crate.
 
