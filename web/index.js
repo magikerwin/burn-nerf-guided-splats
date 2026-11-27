@@ -1,22 +1,66 @@
 import init, {
     create_turntable_3d_session,
     init_panic_hook
-} from './pkg/burn_nerf_guided_splats.js';
+} from './pkg/burn_nerf_guided_splats.js?v=2';
 
 const W = 44, H = 44, NW = 28, NH = 28, OV = 176, WARMUP = 35;
 
-// 11-Part True 3D Saturn System inside [0, 1]^3: Golden Core + 8 Tilted 3D Ring Nodes + 2 Moons
-const SPHERES = (() => {
-    const s = [[0.50, 0.50, 0.50, 0.095, [250, 199, 51]]];
-    for (let k = 0; k < 8; k++) {
-        const a = (k * Math.PI * 2) / 8;
-        const col = k % 2 === 0 ? [46, 219, 250] : [250, 112, 66];
-        s.push([0.50 + 0.27 * Math.cos(a), 0.50 + 0.12 * Math.sin(a), 0.50 + 0.27 * Math.sin(a), 0.056, col]);
+// 3 Contrasting 3D Topologies inside [0, 1]^3
+const SCENES = {
+    saturn: {
+        label: 'Saturn',
+        caption: '11-part 3D Saturn + tilted ring + 2 moons with occlusion.',
+        spheres: (() => {
+            const s = [[0.50, 0.50, 0.50, 0.095, [250, 199, 51]]];
+            for (let k = 0; k < 8; k++) {
+                const a = (k * Math.PI * 2) / 8;
+                const col = k % 2 === 0 ? [46, 219, 250] : [250, 112, 66];
+                s.push([0.50 + 0.27 * Math.cos(a), 0.50 + 0.12 * Math.sin(a), 0.50 + 0.27 * Math.sin(a), 0.056, col]);
+            }
+            s.push([0.22, 0.23, 0.70, 0.062, [61, 240, 143]]);
+            s.push([0.78, 0.77, 0.30, 0.062, [209, 117, 250]]);
+            return s;
+        })()
+    },
+    helix: {
+        label: 'DNA Helix',
+        caption: '14-node intertwined double 3D spiral with continuous depth crossing.',
+        spheres: (() => {
+            const s = [];
+            for (let k = 0; k < 7; k++) {
+                const t = k / 6.0;
+                const y = 0.18 + 0.64 * t;
+                const ang = t * 3.8;
+                s.push([0.50 + 0.23 * Math.cos(ang), y, 0.50 + 0.23 * Math.sin(ang), 0.058, [242, 87, 46]]);
+                const angB = ang + Math.PI;
+                s.push([0.50 + 0.23 * Math.cos(angB), y, 0.50 + 0.23 * Math.sin(angB), 0.058, [46, 209, 245]]);
+            }
+            return s;
+        })()
+    },
+    cage: {
+        label: 'Hollow Cage',
+        caption: '14-node outer 3D frame surrounding a 100% empty interior.',
+        spheres: (() => {
+            const s = [];
+            for (const x of [0.27, 0.73]) {
+                for (const y of [0.27, 0.73]) {
+                    for (const z of [0.27, 0.73]) {
+                        s.push([x, y, z, 0.058, [250, 199, 56]]);
+                    }
+                }
+            }
+            for (const [x, y, z] of [
+                [0.50, 0.23, 0.50], [0.50, 0.77, 0.50],
+                [0.23, 0.50, 0.50], [0.77, 0.50, 0.50],
+                [0.50, 0.50, 0.23], [0.50, 0.50, 0.77]
+            ]) {
+                s.push([x, y, z, 0.054, [41, 219, 199]]);
+            }
+            return s;
+        })()
     }
-    s.push([0.22, 0.23, 0.70, 0.062, [61, 240, 143]]);
-    s.push([0.78, 0.77, 0.30, 0.062, [209, 117, 250]]);
-    return s;
-})();
+};
 
 const ALL_POSES = [
     [-0.75, 0.26], [0.75, -0.22], [2.20, 0.26], [-2.20, -0.22],
@@ -29,8 +73,9 @@ let isRacing = false;
 let loopBusy = false;
 let seeded = false;
 let step = 0;
+let sceneKey = 'saturn';
 let numViews = 4;
-let numSplats = 26;
+let numSplats = 28;
 let yaw = 0.55;
 let pitch = 0.26;
 let showEllipses = true;
@@ -61,7 +106,8 @@ function project3d(x, y, z, yw, pt) {
 
 function renderTrue3dFrame(w, h, yw, pt) {
     const out = new Uint8Array(w * h * 3);
-    const sorted = SPHERES.map(s => {
+    const spheres = SCENES[sceneKey].spheres;
+    const sorted = spheres.map(s => {
         const [u, v, d] = project3d(s[0], s[1], s[2], yw, pt);
         return { u, v, d, r: s[3], c: s[4] };
     }).sort((a, b) => a.d - b.d);
@@ -203,6 +249,8 @@ async function resetSession(autoStartAfter = false) {
     step = 0;
     stepPill.textContent = 'STEP 0';
     document.getElementById('pill-gt').textContent = `K=${numViews} · 3D`;
+    const capEl = document.getElementById('caption-gt');
+    if (capEl) capEl.textContent = SCENES[sceneKey].caption;
     document.getElementById('status-nerf').textContent = `0/${WARMUP}`;
     document.getElementById('bar-nerf').style.width = '0%';
     document.getElementById('score-blind').textContent = '-- dB';
@@ -233,7 +281,7 @@ async function resetSession(autoStartAfter = false) {
 
     session = create_turntable_3d_session(W, H, numSplats, flatRgb, flatPoses);
     await renderAllStages();
-    logLine(`Session ready: K=${numViews} turntable views, N=${numSplats} 3D Gaussians (${session.get_backend_name()}).`);
+    logLine(`Scene '${SCENES[sceneKey].label}' ready: K=${numViews} views, N=${numSplats} splats (${session.get_backend_name()}).`);
 
     if (autoStartAfter) {
         isRacing = true;
@@ -293,7 +341,6 @@ async function raceLoop() {
 }
 
 async function main() {
-    // 1. Paint Ground Truth + all 4 wire-cubes immediately before WASM finishes downloading!
     btnRace.disabled = true;
     btnRace.textContent = '⏳ Loading WASM...';
     await renderAllStages();
@@ -315,6 +362,14 @@ async function main() {
         userAdjustingCamera = false;
         resetSession(false);
     };
+
+    document.querySelectorAll('#scene-tabs .tab-btn').forEach(btn => {
+        btn.onclick = async () => {
+            sceneKey = btn.dataset.scene;
+            document.querySelectorAll('#scene-tabs .tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+            await resetSession(false);
+        };
+    });
 
     document.querySelectorAll('#view-tabs .tab-btn').forEach(btn => {
         btn.onclick = async () => {

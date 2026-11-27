@@ -7,7 +7,7 @@
     <title>3D NeRF-Guided Gaussian Splatting — Kerwin Studio · Burn (Rust)</title>
     <meta name="description" content="Interactive 3D Volumetric Ray-Marched NeRF guiding 3D Gaussian Splatting in pure Rust, Burn, and WebAssembly." />
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2314151a'/%3E%3Ctext x='16' y='22' text-anchor='middle' fill='%23fdfbf6' font-family='system-ui,sans-serif' font-weight='800' font-size='18'%3EK%3C/text%3E%3C/svg%3E" />
-    <link rel="stylesheet" href="style.css?v=3" />
+    <link rel="stylesheet" href="style.css?v=4" />
 </head>
 
 <body>
@@ -51,8 +51,19 @@
 
             <div class="selector-deck">
                 <div class="selector-container">
+                    <span class="selector-label">Scene
+                        <button type="button" class="info-trigger" data-tooltip="Select 3D ground-truth topology: Saturn Ring (core + ring occlusion), DNA Helix (intertwined 3D spirals), or Hollow Cage (100% empty interior shell).">?</button>
+                    </span>
+                    <div class="tabs" id="scene-tabs">
+                        <button type="button" class="tab-btn active" data-scene="saturn">Saturn</button>
+                        <button type="button" class="tab-btn" data-scene="helix">DNA Helix</button>
+                        <button type="button" class="tab-btn" data-scene="cage">Hollow Cage</button>
+                    </div>
+                </div>
+
+                <div class="selector-container">
                     <span class="selector-label">Views
-                        <button type="button" class="info-trigger" data-tooltip="Calibrated 360° camera views K supervising 3D reconstruction. K=2 exhibits epipolar ambiguity; K=4 or K=8 triangulates the full 3D ring.">?</button>
+                        <button type="button" class="info-trigger" data-tooltip="Calibrated 360° camera views K supervising 3D reconstruction. K=2 exhibits epipolar ambiguity; K=4 or K=8 triangulates the full 3D structure.">?</button>
                     </span>
                     <div class="tabs" id="view-tabs">
                         <button type="button" class="tab-btn" data-views="2">2 Views</button>
@@ -63,10 +74,10 @@
 
                 <div class="selector-container">
                     <span class="selector-label">Budget
-                        <button type="button" class="info-trigger" data-tooltip="Total 3D Gaussians N inside [0, 1]³. At sparse budgets (N=26), random 3D splats miss thin rings while NeRF-seeded splats lock onto every body.">?</button>
+                        <button type="button" class="info-trigger" data-tooltip="Total 3D Gaussians N inside [0, 1]³. At sparse budgets (N=28), random 3D splats miss thin geometry while NeRF-seeded splats lock onto every body.">?</button>
                     </span>
                     <div class="tabs" id="budget-tabs">
-                        <button type="button" class="tab-btn active" data-n="26">26 Splats</button>
+                        <button type="button" class="tab-btn active" data-n="28">28 Splats</button>
                         <button type="button" class="tab-btn" data-n="48">48 Splats</button>
                     </div>
                 </div>
@@ -93,7 +104,7 @@
                         <canvas id="cv-gt" class="pix" width="44" height="44"></canvas>
                         <canvas id="ov-gt" class="ov" width="176" height="176"></canvas>
                     </div>
-                    <p class="stage-caption">11-part 3D Saturn + tilted ring + 2 moons with occlusion.</p>
+                    <p id="caption-gt" class="stage-caption">11-part 3D Saturn + tilted ring + 2 moons with occlusion.</p>
                 </div>
 
                 <!-- 2. 3D Volumetric NeRF -->
@@ -206,7 +217,7 @@
         </footer>
     </div>
 
-    <script type="module" src="index.js?v=3"></script>
+    <script type="module" src="index.js?v=4"></script>
 </body>
 
 </html>
