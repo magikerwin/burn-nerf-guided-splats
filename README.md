@@ -91,9 +91,19 @@ Ensure you have the latest Rust toolchain installed:
 rustup update
 ```
 
-### Native CLI (Local Debugging)
-To run local verification and train the models on a synthetic target:
+### Native CLI & Progressive Educational Examples
+Run the main comparison or step through the 3 bite-sized educational examples (runs fast on CPU via Burn's `Autodiff<Flex>` backend):
 ```bash
+# Minimal ~30-line Burn Autodiff Gaussian Splatting intro
+cargo run --example 01_single_splat
+
+# Spectral Bias Lab: L=0 (raw coords) vs L=8 (Fourier Positional Encoding)
+cargo run --example 02_spectral_bias
+
+# True 3D Saturn Benchmark: Blind 3DGS vs Volumetric Ray-Marched NeRF-Guided 3DGS (+3.2 dB faster!)
+cargo run --release --example 03_hybrid_benchmark
+
+# Full native image exporter (target.png, output_gaussian.png, output_nerf.png)
 cargo run --release
 ```
 
@@ -106,9 +116,9 @@ cargo run --release
    ```bash
    wasm-pack build --target web --out-dir web/pkg
    ```
-3. Host the `web` directory over HTTP using `basic-http-server` (or `python -m http.server 8000 --directory web`):
+3. Host the `web` directory over HTTP:
    ```bash
-   cargo install basic-http-server
-   basic-http-server web
+   python3 -m http.server 8000 --directory web
    ```
-4. Open **`http://localhost:4000`** in Chrome or Edge!
+4. Open **`http://localhost:8000`** in any modern browser (uses **WebGPU** when available, and automatically falls back to **Burn Flex CPU WASM** on browsers/environments without WebGPU). Use the top banner to toggle live between **`index.html` (After: Glass-Box Educational Lab)** and **`before.html` (Before: Original Baseline UI)**.
+

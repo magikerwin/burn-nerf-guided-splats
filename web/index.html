@@ -3,199 +3,100 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🔥 3D Gaussian Splatting & NeRF Playground</title>
+    <meta name="description" content="True 3D Volumetric Ray-Marched NeRF (x,y,z -> RGB, sigma) guiding 3D Gaussian Splatting in Rust, Burn & WebAssembly.">
+    <title>True 3D Volumetric NeRF → 3D Gaussian Splatting (Burn + Rust)</title>
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
 </head>
-<body class="y2k-light-theme">
-    <div class="app-container">
-        <!-- Top Navigation Header -->
-        <header class="main-header">
-            <div class="header-brand">
-                <div class="brand-logo">🔥</div>
-                <div>
-                    <h1 class="pixel-title">3D GS & NeRF PLAYGROUND</h1>
-                    <p class="subtitle">Multi-View 3D Gaussian Splatting & View-Conditioned Coordinate NeRF</p>
-                </div>
-            </div>
-            <div class="header-actions">
-                <button id="btn-toggle-advanced" class="btn secondary-btn retro-btn">⚙️ Advanced Settings</button>
-            </div>
-        </header>
-
-
-
-
-        <!-- Streamlined Hero Control Bar -->
-        <div class="card hero-control-bar">
-            <div class="control-bar-left">
-                <button id="btn-train" class="btn primary-btn large-btn">▶ Start Fitting</button>
-                <button id="btn-reset" class="btn secondary-btn">Reset</button>
-                <label class="checkbox-toggle" title="✨ Enable for better quality! Pre-trains NeRF to automatically place 3D Gaussians along detected object boundaries.">
-                    <input type="checkbox" id="chk-nerf-guided">
-                    <span>🎓 NeRF-Guided Seeding</span>
-                </label>
-            </div>
-
-            <div class="control-bar-center">
-                <div class="orbit-slider-container">
-                    <div class="orbit-slider-header">
-                        <button id="btn-autoplay" class="btn text-btn">▶ Play Orbit</button>
-                        <span id="view-angle-text" class="badge">View v = 0.50</span>
-                    </div>
-                    <div class="slider-wrapper">
-                        <span id="label-view-start" class="slider-end-label orange-text">Photo 1</span>
-                        <input type="range" id="view-slider" min="0" max="1" step="0.005" value="0.5" class="custom-range-slider">
-                        <span id="label-view-end" class="slider-end-label purple-text">Photo 2</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="control-bar-right">
-                <div class="select-wrapper">
-                    <label for="resolution-select" class="select-label">Res:</label>
-                    <select id="resolution-select" class="custom-select">
-                        <option value="64" selected>64x64</option>
-                        <option value="128">128x128</option>
-                    </select>
-                </div>
-            </div>
+<body>
+    <div class="top-switch-bar">
+        <span>🚀 <strong>AFTER (True 3D End-to-End):</strong> Ray-Marched 3D Volumetric NeRF <code>(x,y,z) → (RGB, σ)</code> Guiding 3D Gaussians</span>
+        <div style="display:flex; align-items:center; gap:0.6rem;">
+            <span id="backend-pill" style="font-family:var(--font-mono); color:#38bdf8;">⏳ Loading WASM...</span>
+            <a href="before.html">⏪ View BEFORE (Original 2D UI)</a>
         </div>
-
-
-
-        <!-- Main 3-Card Centerpiece Comparison Row -->
-        <main class="visualizer-grid">
-            <!-- 1. Ground Truth Target View -->
-            <div class="card visualizer-card target-card">
-                <div class="card-header">
-                    <h3>Ground Truth Target</h3>
-                    <span class="card-tag">Reference</span>
-                </div>
-                <div class="canvas-container">
-                    <canvas id="canvas-target" width="64" height="64"></canvas>
-                </div>
-                <div class="card-footer">
-                    <span>Multi-View Target Blend</span>
-                </div>
-            </div>
-
-            <!-- 2. Explicit 3D Gaussians (GS) -->
-            <div class="card visualizer-card gaussian-card">
-                <div class="card-header">
-                    <h3 class="orange-text">Explicit 3D Gaussians</h3>
-                    <span id="loss-gaussian" class="loss-badge orange-badge">Loss: --</span>
-                </div>
-                <div class="canvas-container">
-                    <canvas id="canvas-gaussian" width="64" height="64"></canvas>
-                </div>
-                <div class="card-footer">
-                    <span>3D Rotated Projection Splats</span>
-                </div>
-            </div>
-
-            <!-- 3. Implicit View NeRF (MLP) -->
-            <div class="card visualizer-card nerf-card">
-                <div class="card-header">
-                    <h3 class="purple-text">Implicit View NeRF</h3>
-                    <span id="loss-nerf" class="loss-badge purple-badge">Loss: --</span>
-                </div>
-                <div class="canvas-container">
-                    <canvas id="canvas-nerf" width="64" height="64"></canvas>
-                </div>
-                <div class="card-footer">
-                    <span>View-Conditioned Coordinate Network</span>
-                </div>
-            </div>
-        </main>
-
-        <!-- Collapsible Advanced Settings & Hybrid Pipeline Drawer -->
-        <section id="advanced-drawer" class="card advanced-drawer hidden">
-            <div class="drawer-header">
-                <h2>⚙️ Advanced Configuration & Analytics</h2>
-                <button id="btn-close-advanced" class="btn text-btn">✕ Close</button>
-            </div>
-
-            <div class="drawer-grid">
-                <!-- Column 1: Target Setup & Hyperparameters -->
-                <div class="drawer-column">
-                    <h4>1. Target Setup & Hyperparameters</h4>
-                    <div class="form-group">
-                        <label for="image-select">Target Image Source</label>
-                        <select id="image-select" class="custom-select">
-                            <option value="multi-geometry" selected>🎨 3D Multi-Color Shapes (4-Frame Parallax)</option>
-                            <option value="planet-orbit">🪐 3D Solar System (4-Frame Orbit)</option>
-                            <option value="emoji-face">😊 3D Emoji Face (4-Frame Arc)</option>
-                            <option value="synthetic">🔴 Dual-View Benchmark (Circle 0° & 30°)</option>
-                            <option value="upload">📷 Upload Custom Photo Sequence (2 to 5 Photos)...</option>
-                        </select>
-                        <div id="custom-upload-container" class="hidden form-subgroup">
-                            <label>Select Multi-Photo Sequence:</label>
-                            <input type="file" id="image-upload-multi" accept="image/*" multiple>
-                        </div>
-                    </div>
-
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="num-gaussians">Num Gaussians (N)</label>
-                            <input type="number" id="num-gaussians" min="10" max="2000" value="500" class="custom-input">
-                        </div>
-
-                        <div class="form-group">
-                            <label for="lr-gaussian">GS LR</label>
-                            <input type="number" id="lr-gaussian" step="0.001" value="0.005" class="custom-input">
-                        </div>
-                        <div class="form-group">
-                            <label for="lr-nerf">NeRF LR</label>
-                            <input type="number" id="lr-nerf" step="0.0001" value="0.001" class="custom-input">
-                        </div>
-                    </div>
-
-                    <div class="form-row" style="grid-template-columns: 1fr 2fr;">
-                        <div class="form-group">
-                            <label for="nerf-seed-iters">🎓 NeRF Seeding Steps</label>
-                            <input type="number" id="nerf-seed-iters" min="50" max="2000" step="50" value="500" class="custom-input">
-                        </div>
-                        <div class="form-group" style="align-self: flex-end; font-size: 0.75rem; color: #64748b; padding-bottom: 0.35rem;">
-                            More steps → sharper edge map → better Gaussian seeding. Only used when 🎓 NeRF-Guided Seeding is enabled.
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Column 2: Guided Pipeline Concept -->
-                <div class="drawer-column">
-                    <h4>2. Hybrid Guided Concept</h4>
-                    <div class="form-group" style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.45;">
-                        <p style="margin-bottom: 0.5rem;"><strong>Why NeRF guides 3D GS?</strong></p>
-                        <p>Uniform random initialization creates floaters and artifacts. Seeding Gaussians along NeRF-derived spatial gradients forces 3D Gaussians to concentrate on true object surfaces!</p>
-                    </div>
-                </div>
-
-
-                <!-- Column 3: Loss Chart & Blend View -->
-                <div class="drawer-column">
-                    <h4>3. Analytics & Loss Convergence</h4>
-                    <div class="chart-container">
-                        <canvas id="canvas-chart" width="280" height="140"></canvas>
-                    </div>
-                    <div class="blend-container" style="margin-top: 10px;">
-                        <canvas id="canvas-blend" width="64" height="64" style="display:none;"></canvas>
-                        <input type="range" id="blend-slider" min="0" max="1" step="0.01" value="0.5" style="display:none;">
-                    </div>
-                </div>
-            </div>
-
-            <!-- Terminal Log Output -->
-            <div class="terminal-container">
-                <div class="terminal-header">Developer Console Log</div>
-                <div id="developer-console" class="terminal-body"></div>
-            </div>
-        </section>
     </div>
 
-    <!-- WASM Entry Module -->
+    <div class="app-shell">
+        <header class="story-hero">
+            <div class="hero-top-row">
+                <h1 class="hero-title">🧊 TRUE 3D VOLUMETRIC NeRF → 3D GAUSSIAN SPLATTING</h1>
+                <span id="step-pill" class="score-pill info">Step 0</span>
+            </div>
+            <p class="analogy-box">
+                <strong>Why 3D Guidance Wins Fairly:</strong> Inside a 3D cube <code>[0, 1]³</code>, <strong>98% of 3D space is empty air</strong>—so <strong>Blind 3D Splats</strong> get lost in the void!
+                A coarse <strong>3D Ray-Marched NeRF</strong> pierces the whole cube cheaply to find dense 3D matter <code>σ(x, y, z)</code> and spawns every 3D Gaussian right onto the 3D objects.
+            </p>
+        </header>
+
+        <section class="control-bar" aria-label="3D Turntable Race Controls">
+            <div class="ctrl-group">
+                <button id="btn-race" class="btn btn-race">▶ Start Fair 3D Race</button>
+                <button id="btn-reset" class="btn">↺ Reset</button>
+            </div>
+            <div class="orbit-wrap">
+                <span>🔄 360° Spin:</span>
+                <input type="range" id="yaw-slider" min="-3.14" max="3.14" step="0.04" value="0.55" style="width:120px;">
+            </div>
+            <div class="budget-pills">
+                <button class="budget-btn active" data-n="24">24 Splats</button>
+                <button class="budget-btn" data-n="60">60 Splats</button>
+            </div>
+        </section>
+
+        <main class="race-grid" id="turntable-grid" style="touch-action:pan-y;">
+            <!-- Card 1: True 3D Volumetric Ray-Marched NeRF -->
+            <div class="race-card blueprint">
+                <div class="card-top">
+                    <h3>1. 🧊 3D Volumetric NeRF</h3>
+                    <span id="status-nerf" class="score-pill info">Ray Marching</span>
+                </div>
+                <div class="meter-track"><div id="bar-nerf" class="meter-fill info" style="width:0%;"></div></div>
+                <div class="stage-box">
+                    <canvas id="cv-nerf" class="pix" width="24" height="24"></canvas>
+                    <canvas id="ov-nerf" class="ov" width="244" height="244"></canvas>
+                </div>
+                <p class="card-takeaway">
+                    Marches 3D rays through <code>(x, y, z)</code> to learn <strong>3D volume density <code>σ(x,y,z)</code></strong> across 4 turntable views.
+                </p>
+            </div>
+
+            <!-- Card 2: Blind 3D Gaussians -->
+            <div class="race-card blind">
+                <div class="card-top">
+                    <h3>2. 🎲 Blind 3D Splats</h3>
+                    <span id="score-blind" class="score-pill blind">PSNR: -- dB</span>
+                </div>
+                <div class="meter-track"><div id="bar-blind" class="meter-fill blind"></div></div>
+                <div class="stage-box">
+                    <canvas id="cv-blind" class="pix" width="48" height="48"></canvas>
+                    <canvas id="ov-blind" class="ov" width="244" height="244"></canvas>
+                </div>
+                <p class="card-takeaway">
+                    <strong>Trains from Step 1</strong>, but random 3D coordinates miss the small 3D spheres in the 98% empty 3D cube!
+                </p>
+            </div>
+
+            <!-- Card 3: 3D Volumetric-Guided Gaussians -->
+            <div class="race-card guided">
+                <div class="card-top">
+                    <h3>3. ✨ 3D-NeRF Guided</h3>
+                    <span id="score-guided" class="score-pill guided">Waiting...</span>
+                </div>
+                <div class="meter-track"><div id="bar-guided" class="meter-fill guided"></div></div>
+                <div class="stage-box">
+                    <canvas id="cv-guided" class="pix" width="48" height="48"></canvas>
+                    <canvas id="ov-guided" class="ov" width="244" height="244"></canvas>
+                </div>
+                <p class="card-takeaway">
+                    Spawns directly inside NeRF's dense <code>σ(x,y,z)</code> 3D voxels—beat Blind by <strong>+2.3 dB in less time</strong>!
+                </p>
+            </div>
+        </main>
+    </div>
+
     <script type="module" src="index.js"></script>
 </body>
 </html>

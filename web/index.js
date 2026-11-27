@@ -1,916 +1,236 @@
-import init, { WasmTrainingSession, create_multiframe_session, init_panic_hook, init_webgpu } from './pkg/burn_nerf_guided_splats.js';
+import init, {
+    create_turntable_3d_session,
+    init_panic_hook,
+    init_webgpu
+} from './pkg/burn_nerf_guided_splats.js';
 
-
-
-// Redirect Console output to HTML developer console
-const developerConsole = document.getElementById('developer-console');
-
-function logToTerminal(message, type = 'info') {
-    if (!developerConsole) return;
-    const line = document.createElement('div');
-    line.className = `log-line ${type}`;
-    line.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
-    developerConsole.appendChild(line);
-    developerConsole.scrollTop = developerConsole.scrollHeight;
-}
-
-const orgLog = console.log;
-const orgWarn = console.warn;
-const orgError = console.error;
-
-console.log = function(...args) {
-    orgLog.apply(console, args);
-    logToTerminal(args.join(' '), 'info');
-};
-
-console.warn = function(...args) {
-    orgWarn.apply(console, args);
-    logToTerminal(args.join(' '), 'warn');
-};
-
-console.error = function(...args) {
-    orgError.apply(console, args);
-    logToTerminal(args.join(' '), 'error');
-};
-
-// Bulletproof Single-Threaded GPU Task Queue to eliminate WebGPU race conditions forever
 class GpuTaskQueue {
-    constructor() {
-        this.promiseChain = Promise.resolve();
-    }
-
-    // Serializes GPU tasks so at most ONE WebGPU mapAsync/step executes at a time
-    async run(taskFn) {
-        const nextPromise = this.promiseChain.then(async () => {
-            try {
-                return await taskFn();
-            } catch (err) {
-                console.error("GPU Task Error:", err);
-                throw err;
-            }
-        });
-        this.promiseChain = nextPromise.catch(() => {});
-        return nextPromise;
+    constructor() { this.chain = Promise.resolve(); }
+    async run(fn) {
+        const next = this.chain.then(fn);
+        this.chain = next.catch(() => {});
+        return next;
     }
 }
 
 const gpuQueue = new GpuTaskQueue();
+const W = 44, H = 44, NW = 28, NH = 28, WARMUP = 35;
+
+const SPHERES = (() => {
+    const s = [[0.50, 0.50, 0.50, 0.095, [250, 199, 51]]];
+    for (let k = 0; k < 8; k++) {
+        const a = (k * Math.PI * 2) / 8;
+        const col = k % 2 === 0 ? [46, 219, 250] : [250, 112, 66];
+        s.push([0.50 + 0.27 * Math.cos(a), 0.50 + 0.12 * Math.sin(a), 0.50 + 0.27 * Math.sin(a), 0.056, col]);
+    }
+    s.push([0.22, 0.23, 0.70, 0.062, [61, 240, 143]]);
+    s.push([0.78, 0.77, 0.30, 0.062, [209, 117, 250]]);
+    return s;
+})();
+const TRAIN_POSES = [-0.75, 0.26, 0.75, -0.22, 2.20, 0.26, -2.20, -0.22];
 
 let session = null;
-let isTraining = false;
-let isAutoPlaying = false;
-let autoPlayDirection = 1;
+let isRacing = false;
+let loopBusy = false;
+let seeded = false;
+let step = 0;
+let numSplats = 26;
+let yaw = 0.55, pitch = 0.26;
+let dragging = false, lastX = 0, lastY = 0;
 
-
-let width = 64;  // Default low-resolution 64x64 for fast responsiveness
-let height = 64;
-
-let targetFrames = []; // Array of Uint8Arrays representing RGB frames
-let currentViewV = 0.5; // Relative view parameter in [0.0, 1.0]
-
-let lossHistoryGaussian = [];
-let lossHistoryNerf = [];
-
-// DOM Elements
-const resolutionSelect = document.getElementById('resolution-select');
-const selectImg = document.getElementById('image-select');
-const customUploadContainer = document.getElementById('custom-upload-container');
-const uploadInputMulti = document.getElementById('image-upload-multi');
-
-const numGaussiansInput = document.getElementById('num-gaussians');
-const lrGaussianInput = document.getElementById('lr-gaussian');
-const lrNerfInput = document.getElementById('lr-nerf');
-const nerfSeedItersInput = document.getElementById('nerf-seed-iters');
-const chkNerfGuided = document.getElementById('chk-nerf-guided');
-
-const btnTrain = document.getElementById('btn-train');
+const backendPill = document.getElementById('backend-pill');
+const stepPill = document.getElementById('step-pill');
+const btnRace = document.getElementById('btn-race');
 const btnReset = document.getElementById('btn-reset');
 
-const btnOneClickHybrid = document.getElementById('btn-one-click-hybrid');
-const btnPretrain = document.getElementById('btn-nerf-pretrain');
-const btnSeed = document.getElementById('btn-seed');
+function project3d(x, y, z, yw, pt) {
+    const cy = Math.cos(yw), sy = Math.sin(yw), cp = Math.cos(pt), sp = Math.sin(pt);
+    const x0 = x - 0.5, y0 = y - 0.5, z0 = z - 0.5;
+    const x1 = x0 * cy - z0 * sy, z1 = x0 * sy + z0 * cy;
+    return [x1 + 0.5, y0 * cp - z1 * sp + 0.5, y0 * sp + z1 * cp + 0.5];
+}
 
-const btnAutoPlay = document.getElementById('btn-autoplay');
-const viewSlider = document.getElementById('view-slider');
-const viewAngleText = document.getElementById('view-angle-text');
-const labelViewStart = document.getElementById('label-view-start');
-const labelViewEnd = document.getElementById('label-view-end');
+function renderTrue3dFrame(w, h, yw, pt) {
+    const out = new Uint8Array(w * h * 3);
+    const sorted = SPHERES.map(s => {
+        const [u, v, d] = project3d(s[0], s[1], s[2], yw, pt);
+        return { u, v, d, r: s[3], c: s[4] };
+    }).sort((a, b) => a.d - b.d);
+    const aa = 0.85 / w;
 
-const btnToggleAdvanced = document.getElementById('btn-toggle-advanced');
-const btnCloseAdvanced = document.getElementById('btn-close-advanced');
-const advancedDrawer = document.getElementById('advanced-drawer');
+    for (let r = 0; r < h; r++) {
+        const py = (r + 0.5) / h;
+        for (let c = 0; c < w; c++) {
+            const px = (c + 0.5) / w, idx = (r * w + c) * 3;
+            let T = 1.0, ar = 0, ag = 0, ab = 0;
+            for (const s of sorted) {
+                const dist = Math.hypot(px - s.u, py - s.v);
+                if (dist >= s.r + aa) continue;
+                const cov = Math.min(1, Math.max(0, (s.r + aa - dist) / (2 * aa)));
+                const shade = 0.72 + 0.28 * Math.sqrt(Math.max(0, 1 - Math.min(1, (dist / s.r) ** 2)));
+                const wt = T * cov;
+                ar += wt * s.c[0] * shade; ag += wt * s.c[1] * shade; ab += wt * s.c[2] * shade;
+                T *= (1 - cov);
+                if (T < 0.01) break;
+            }
+            out[idx] = Math.round(ar); out[idx + 1] = Math.round(ag); out[idx + 2] = Math.round(ab);
+        }
+    }
+    return out;
+}
 
-const canvasTarget = document.getElementById('canvas-target');
-const canvasGaussian = document.getElementById('canvas-gaussian');
-const canvasNerf = document.getElementById('canvas-nerf');
-const canvasChart = document.getElementById('canvas-chart');
-const canvasBlend = document.getElementById('canvas-blend');
-const blendSlider = document.getElementById('blend-slider');
+function paintRgb(id, w, h, rgb) {
+    if (!rgb) return;
+    const cv = document.getElementById(id), ctx = cv.getContext('2d');
+    const img = ctx.createImageData(w, h);
+    for (let i = 0, j = 0; i < img.data.length; i += 4, j += 3) {
+        img.data[i] = rgb[j]; img.data[i + 1] = rgb[j + 1]; img.data[i + 2] = rgb[j + 2]; img.data[i + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+}
 
-const labelLossGaussian = document.getElementById('loss-gaussian');
-const labelLossNerf = document.getElementById('loss-nerf');
+function drawWireCubes() {
+    ['ov-nerf', 'ov-blind', 'ov-guided'].forEach(id => {
+        const cv = document.getElementById(id), c = cv.getContext('2d');
+        const S = cv.width;
+        c.clearRect(0, 0, S, S);
+        const lo = 0.12, hi = 0.88;
+        const v = [[lo,lo,lo],[hi,lo,lo],[hi,hi,lo],[lo,hi,lo],[lo,lo,hi],[hi,lo,hi],[hi,hi,hi],[lo,hi,hi]]
+            .map(p => project3d(p[0], p[1], p[2], yaw, pitch));
+        c.strokeStyle = 'rgba(148, 163, 184, 0.35)';
+        c.lineWidth = 1.2;
+        c.beginPath();
+        [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]].forEach(([a, b]) => {
+            c.moveTo(v[a][0] * S, v[a][1] * S); c.lineTo(v[b][0] * S, v[b][1] * S);
+        });
+        c.stroke();
+    });
+}
 
-// Educational Stepper Card References
-const step1Card = document.getElementById('step-1-card');
-const step1Status = document.getElementById('step-1-status');
-const step2Card = document.getElementById('step-2-card');
-const step2Status = document.getElementById('step-2-status');
-const step3Card = document.getElementById('step-3-card');
-const step3Status = document.getElementById('step-3-status');
+async function refreshViews() {
+    drawWireCubes();
+    if (!session) return;
+    await gpuQueue.run(async () => {
+        const nRgb = await session.get_vol_nerf_turntable_render(yaw, pitch);
+        const bRgb = await session.get_blind_turntable_render(yaw, pitch);
+        paintRgb('cv-nerf', NW, NH, nRgb);
+        paintRgb('cv-blind', W, H, bRgb);
+        if (seeded) {
+            const gRgb = await session.get_guided_turntable_render(yaw, pitch);
+            paintRgb('cv-guided', W, H, gRgb);
+        }
+    });
+}
 
-// Initialize WASM
+async function resetSession() {
+    isRacing = false; seeded = false; step = 0;
+    btnRace.textContent = '▶ Start Fair 3D Race';
+    btnRace.classList.remove('running');
+    stepPill.textContent = 'Step 0';
+    document.getElementById('status-nerf').textContent = `Warmup 0/${WARMUP}`;
+    document.getElementById('bar-nerf').style.width = '0%';
+    document.getElementById('score-blind').textContent = 'PSNR: -- dB';
+    document.getElementById('score-guided').textContent = 'Waiting...';
+    document.getElementById('bar-blind').style.width = '0%';
+    document.getElementById('bar-guided').style.width = '0%';
+    document.getElementById('cv-guided').getContext('2d').fillRect(0, 0, W, H);
+
+    const frameLen = W * H * 3;
+    const numViews = TRAIN_POSES.length / 2;
+    const flat = new Uint8Array(numViews * frameLen);
+    for (let k = 0; k < numViews; k++) {
+        flat.set(renderTrue3dFrame(W, H, TRAIN_POSES[k * 2], TRAIN_POSES[k * 2 + 1]), k * frameLen);
+    }
+
+    await gpuQueue.run(async () => {
+        session = create_turntable_3d_session(W, H, numSplats, flat, new Float32Array(TRAIN_POSES));
+    });
+    await refreshViews();
+}
+
+async function raceLoop() {
+    if (loopBusy || !isRacing || !session) return;
+    loopBusy = true;
+
+    await gpuQueue.run(async () => {
+        if (!isRacing || !session) return;
+        step++;
+        stepPill.textContent = `Step ${step}`;
+        if (!dragging) yaw += 0.02;
+
+        if (step <= WARMUP) {
+            session.step_3d_warmup_fair(0.075, 0.025);
+            document.getElementById('status-nerf').textContent = `3D Rays ${step}/${WARMUP}`;
+            document.getElementById('bar-nerf').style.width = `${Math.round((step / WARMUP) * 100)}%`;
+            if (step === WARMUP) {
+                await session.seed_from_3d_vol_nerf();
+                seeded = true;
+                document.getElementById('status-nerf').textContent = '✓ 3D σ Seeded!';
+            }
+        } else {
+            session.step_3d_race_fast(0.075);
+        }
+
+        if (step % 3 === 0 || step === WARMUP) {
+            const losses = await session.get_turntable_losses();
+            const dbB = -10 * Math.log10(Math.max(losses[0], 1e-6));
+            document.getElementById('score-blind').textContent = `${dbB.toFixed(1)} dB`;
+            document.getElementById('bar-blind').style.width = `${Math.min(100, Math.max(8, (dbB - 14) * 8))}%`;
+            if (seeded) {
+                const dbG = -10 * Math.log10(Math.max(losses[1], 1e-6));
+                document.getElementById('score-guided').textContent = `${dbG.toFixed(1)} dB`;
+                document.getElementById('bar-guided').style.width = `${Math.min(100, Math.max(8, (dbG - 14) * 8))}%`;
+            }
+            const nRgb = await session.get_vol_nerf_turntable_render(yaw, pitch);
+            const bRgb = await session.get_blind_turntable_render(yaw, pitch);
+            paintRgb('cv-nerf', NW, NH, nRgb);
+            paintRgb('cv-blind', W, H, bRgb);
+            if (seeded) {
+                const gRgb = await session.get_guided_turntable_render(yaw, pitch);
+                paintRgb('cv-guided', W, H, gRgb);
+            }
+            drawWireCubes();
+        }
+    });
+
+    loopBusy = false;
+    if (isRacing) {
+        await new Promise(r => setTimeout(r, 6));
+        requestAnimationFrame(raceLoop);
+    }
+}
+
 async function start() {
-    // Wire up events immediately on page load
-    if (resolutionSelect) resolutionSelect.addEventListener('change', handleResolutionChange);
-    if (selectImg) selectImg.addEventListener('change', handleImageSelect);
-    if (uploadInputMulti) uploadInputMulti.addEventListener('change', handleMultiPhotoUpload);
+    btnRace.onclick = () => {
+        isRacing = !isRacing;
+        btnRace.textContent = isRacing ? '⏸ Pause 3D Race' : '▶ Continue 3D Race';
+        btnRace.classList.toggle('running', isRacing);
+        if (isRacing) requestAnimationFrame(raceLoop);
+    };
+    btnReset.onclick = resetSession;
+    document.querySelectorAll('.budget-btn').forEach(btn => {
+        btn.onclick = async () => {
+            numSplats = parseInt(btn.dataset.n, 10);
+            document.querySelectorAll('.budget-btn').forEach(b => b.classList.toggle('active', b === btn));
+            await resetSession();
+        };
+    });
 
-    if (btnTrain) btnTrain.addEventListener('click', toggleTraining);
-    if (btnReset) btnReset.addEventListener('click', resetSession);
-    if (btnAutoPlay) btnAutoPlay.addEventListener('click', toggleAutoPlay);
-    if (btnOneClickHybrid) btnOneClickHybrid.addEventListener('click', runOneClickHybridPipeline);
-    if (viewSlider) viewSlider.addEventListener('input', handleViewSliderInput);
-    if (blendSlider) blendSlider.addEventListener('input', updateBlendCanvas);
-    if (btnPretrain) btnPretrain.addEventListener('click', runNeRFPretraining);
-    if (btnSeed) btnSeed.addEventListener('click', seedGaussiansFromEdges);
-
-    if (btnToggleAdvanced) btnToggleAdvanced.addEventListener('click', () => advancedDrawer.classList.toggle('hidden'));
-    if (btnCloseAdvanced) btnCloseAdvanced.addEventListener('click', () => advancedDrawer.classList.add('hidden'));
+    const yawSlider = document.getElementById('yaw-slider');
+    if (yawSlider) {
+        yawSlider.addEventListener('input', async e => {
+            dragging = true;
+            yaw = parseFloat(e.target.value);
+            if (!isRacing) await refreshViews(); else drawWireCubes();
+        });
+        yawSlider.addEventListener('change', () => { dragging = false; });
+    }
 
     await init();
     init_panic_hook();
-    
-    // Initialize Burn WGPU WebGPU device context
-    await init_webgpu();
-    
-    updateCanvasDimensions();
-
-
-    // Set up default synthetic target views
-    generateSyntheticTargets();
+    const hasGpu = await init_webgpu();
+    backendPill.textContent = hasGpu ? '⚡ WebGPU Ready' : '🖥️ CPU WASM Ready';
     await resetSession();
-
 }
 
-
-
-
-// Update canvas DOM sizes
-function updateCanvasDimensions() {
-    const res = parseInt(resolutionSelect.value) || 64;
-    width = res;
-    height = res;
-
-    canvasTarget.width = width;
-    canvasTarget.height = height;
-    canvasGaussian.width = width;
-    canvasGaussian.height = height;
-    canvasNerf.width = width;
-    canvasNerf.height = height;
-    if (canvasBlend) {
-        canvasBlend.width = width;
-        canvasBlend.height = height;
-    }
-}
-
-// Handle render grid resolution dropdown change
-function handleResolutionChange() {
-    updateCanvasDimensions();
-    generateSyntheticTargets(selectImg ? selectImg.value : 'multi-geometry');
-    resetSession();
-}
-
-
-// Generate multi-scene synthetic target keyframe sequences
-function generateSyntheticTargets(type = 'multi-geometry') {
-    targetFrames = [];
-    const numFrames = (type === 'synthetic') ? 2 : 4;
-
-    for (let f = 0; f < numFrames; f++) {
-        const normV = f / (numFrames - 1); // 0.0, 0.33, 0.67, 1.0
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = width;
-        tempCanvas.height = height;
-        const ctx = tempCanvas.getContext('2d');
-
-        if (type === 'multi-geometry') {
-            // Scene 1: 3D Multi-Color Shapes with Parallax (Red Sphere, Green Box, Cyan Triangle)
-            ctx.fillStyle = '#090d16'; // Deep Space Background
-            ctx.fillRect(0, 0, width, height);
-
-            // Background Green Box (Parallax shift right as camera rotates)
-            const greenX = width * (0.22 + normV * 0.18);
-            ctx.fillStyle = '#10b981';
-            ctx.fillRect(greenX, height * 0.3, width * 0.22, height * 0.4);
-
-            // Foreground Red Sphere (Center)
-            ctx.beginPath();
-            ctx.arc(width * 0.5, height * 0.5, width * 0.22, 0, 2 * Math.PI);
-            ctx.fillStyle = '#f97316';
-            ctx.fill();
-
-            // Right Cyan Triangle
-            const cyanX = width * (0.75 - normV * 0.12);
-            ctx.beginPath();
-            ctx.moveTo(cyanX, height * 0.25);
-            ctx.lineTo(cyanX + width * 0.12, height * 0.65);
-            ctx.lineTo(cyanX - width * 0.12, height * 0.65);
-            ctx.closePath();
-            ctx.fillStyle = '#06b6d4';
-            ctx.fill();
-
-        } else if (type === 'planet-orbit') {
-            // Scene 2: 3D Solar System (Sun in center, Earth & Mars orbiting)
-            ctx.fillStyle = '#030712';
-            ctx.fillRect(0, 0, width, height);
-
-            // Orbit Path Guide Ring
-            ctx.strokeStyle = '#1e293b';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.ellipse(width * 0.5, height * 0.5, width * 0.38, height * 0.22, 0, 0, 2 * Math.PI);
-            ctx.stroke();
-
-            // Center Sun
-            ctx.beginPath();
-            ctx.arc(width * 0.5, height * 0.5, width * 0.18, 0, 2 * Math.PI);
-            ctx.fillStyle = '#f59e0b';
-            ctx.fill();
-
-            // Blue Earth (Orbiting around Sun)
-            const angleEarth = normV * Math.PI * 0.9;
-            const earthX = width * 0.5 + Math.cos(angleEarth) * (width * 0.38);
-            const earthY = height * 0.5 + Math.sin(angleEarth) * (height * 0.22);
-            ctx.beginPath();
-            ctx.arc(earthX, earthY, width * 0.08, 0, 2 * Math.PI);
-            ctx.fillStyle = '#3b82f6';
-            ctx.fill();
-
-            // Red Mars (Orbiting on smaller inner arc)
-            const angleMars = Math.PI - normV * Math.PI * 0.7;
-            const marsX = width * 0.5 + Math.cos(angleMars) * (width * 0.26);
-            const marsY = height * 0.5 + Math.sin(angleMars) * (height * 0.14);
-            ctx.beginPath();
-            ctx.arc(marsX, marsY, width * 0.06, 0, 2 * Math.PI);
-            ctx.fillStyle = '#ef4444';
-            ctx.fill();
-
-        } else if (type === 'emoji-face') {
-            // Scene 3: 3D Emoji Face Arc
-            ctx.fillStyle = '#0f172a';
-            ctx.fillRect(0, 0, width, height);
-
-            const skew = (normV - 0.5) * 0.35;
-            ctx.save();
-            ctx.translate(width * 0.5, height * 0.5);
-            ctx.transform(1, 0, skew, 1, 0, 0);
-
-            // Yellow Head
-            ctx.beginPath();
-            ctx.arc(0, 0, width * 0.36, 0, 2 * Math.PI);
-            ctx.fillStyle = '#eab308';
-            ctx.fill();
-
-            // Eyes
-            ctx.fillStyle = '#1e293b';
-            ctx.beginPath();
-            ctx.arc(-width * 0.12, -height * 0.1, width * 0.06, 0, 2 * Math.PI);
-            ctx.arc(width * 0.12, -height * 0.1, width * 0.06, 0, 2 * Math.PI);
-            ctx.fill();
-
-            // Smile
-            ctx.lineWidth = 3;
-            ctx.strokeStyle = '#1e293b';
-            ctx.beginPath();
-            ctx.arc(0, height * 0.05, width * 0.18, 0.2, Math.PI - 0.2);
-            ctx.stroke();
-
-            ctx.restore();
-
-        } else {
-            // Benchmark Dual-View (Circle 0° vs 30°)
-            ctx.fillStyle = '#000080';
-            ctx.fillRect(0, 0, width, height);
-            ctx.beginPath();
-            if (f === 0) {
-                ctx.arc(width * 0.5, height * 0.5, width * 0.35, 0, 2 * Math.PI);
-            } else {
-                ctx.ellipse(width * 0.58, height * 0.5, width * 0.28, width * 0.35, Math.PI / 12, 0, 2 * Math.PI);
-            }
-            ctx.fillStyle = '#ff0000';
-            ctx.fill();
-        }
-
-        const imgData = ctx.getImageData(0, 0, width, height);
-        const frameBuf = new Uint8Array(width * height * 3);
-        let idx = 0;
-        for (let i = 0; i < imgData.data.length; i += 4) {
-            frameBuf[idx++] = imgData.data[i];
-            frameBuf[idx++] = imgData.data[i + 1];
-            frameBuf[idx++] = imgData.data[i + 2];
-        }
-        targetFrames.push(frameBuf);
-    }
-
-    if (labelViewStart) labelViewStart.textContent = `Photo 1`;
-    if (labelViewEnd) labelViewEnd.textContent = `Photo ${numFrames}`;
-
-    renderTargetViewBlend();
-}
-
-
-// Render blended Ground Truth view based on current view slider parameter
-function renderTargetViewBlend() {
-    const ctx = canvasTarget.getContext('2d');
-    const imgData = ctx.createImageData(width, height);
-    const numFrames = targetFrames.length;
-
-    if (numFrames === 0) return;
-
-    let f0 = 0;
-    let f1 = 0;
-    let weight = 0;
-
-    if (numFrames === 1) {
-        f0 = 0;
-        f1 = 0;
-        weight = 0;
-    } else {
-        const scaled = currentViewV * (numFrames - 1);
-        f0 = Math.floor(scaled);
-        f1 = Math.min(f0 + 1, numFrames - 1);
-        weight = scaled - f0;
-    }
-
-    const buf0 = targetFrames[f0];
-    const buf1 = targetFrames[f1];
-
-    let srcIdx = 0;
-    for (let i = 0; i < imgData.data.length; i += 4) {
-        imgData.data[i] = (1 - weight) * buf0[srcIdx] + weight * buf1[srcIdx];
-        imgData.data[i + 1] = (1 - weight) * buf0[srcIdx + 1] + weight * buf1[srcIdx + 1];
-        imgData.data[i + 2] = (1 - weight) * buf0[srcIdx + 2] + weight * buf1[srcIdx + 2];
-        imgData.data[i + 3] = 255;
-        srcIdx += 3;
-    }
-    ctx.putImageData(imgData, 0, 0);
-}
-
-// Handle multi-photo file upload (Photo 1, Photo 2, Photo 3, Photo 4...)
-function handleMultiPhotoUpload(e) {
-    const files = Array.from(e.target.files);
-    if (!files || files.length === 0) return;
-
-    targetFrames = [];
-    let loadedCount = 0;
-
-    files.forEach((file, index) => {
-        const img = new Image();
-        img.onload = () => {
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = width;
-            tempCanvas.height = height;
-            const ctx = tempCanvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, width, height);
-
-            const imgData = ctx.getImageData(0, 0, width, height);
-            const frameBuf = new Uint8Array(width * height * 3);
-            let idx = 0;
-            for (let i = 0; i < imgData.data.length; i += 4) {
-                frameBuf[idx++] = imgData.data[i];
-                frameBuf[idx++] = imgData.data[i + 1];
-                frameBuf[idx++] = imgData.data[i + 2];
-            }
-            targetFrames[index] = frameBuf;
-            loadedCount++;
-
-            if (loadedCount === files.length) {
-                if (labelViewStart) labelViewStart.textContent = `Photo 1`;
-                if (labelViewEnd) labelViewEnd.textContent = `Photo ${files.length}`;
-                renderTargetViewBlend();
-                resetSession();
-            }
-        };
-        img.src = URL.createObjectURL(file);
-    });
-}
-
-// Handle image selection dropdown
-function handleImageSelect() {
-    const val = selectImg.value;
-    if (val === 'upload') {
-        if (customUploadContainer) customUploadContainer.classList.remove('hidden');
-    } else {
-        if (customUploadContainer) customUploadContainer.classList.add('hidden');
-        generateSyntheticTargets(val);
-        resetSession();
-    }
-}
-// Handle view interpolation slider movement
-async function handleViewSliderInput() {
-    currentViewV = parseFloat(viewSlider.value);
-    const numFrames = targetFrames.length || 2;
-    viewAngleText.textContent = `v = ${currentViewV.toFixed(2)} (${numFrames} Keyframes)`;
-
-    renderTargetViewBlend();
-
-    // While training, skip manual render — the training loop already renders at currentViewV each step
-    if (session && !isTraining) {
-        await gpuQueue.run(async () => {
-            if (!session) return;
-            const rgbG = await session.get_gaussian_render_view(currentViewV);
-            const rgbN = await session.get_nerf_render_view(currentViewV);
-            renderModelOutput(canvasGaussian, rgbG);
-            renderModelOutput(canvasNerf, rgbN);
-            updateBlendCanvas();
-        });
-    }
-}
-
-// Toggle hands-free 3D Orbit Turntable Animation
-function toggleAutoPlay() {
-    if (isAutoPlaying) {
-        isAutoPlaying = false;
-        if (btnAutoPlay) btnAutoPlay.textContent = '▶ Play Orbit';
-    } else {
-        isAutoPlaying = true;
-        if (btnAutoPlay) btnAutoPlay.textContent = '⏸ Pause Orbit';
-        requestAnimationFrame(autoPlayOrbitLoop);
-    }
-}
-
-// Continuous 3D Orbit sweep loop
-async function autoPlayOrbitLoop() {
-    if (!isAutoPlaying) return;
-
-    currentViewV += autoPlayDirection * 0.008;
-    if (currentViewV >= 1.0) {
-        currentViewV = 1.0;
-        autoPlayDirection = -1;
-    } else if (currentViewV <= 0.0) {
-        currentViewV = 0.0;
-        autoPlayDirection = 1;
-    }
-
-    viewSlider.value = currentViewV;
-    const numFrames = targetFrames.length || 2;
-    viewAngleText.textContent = `v = ${currentViewV.toFixed(2)} (${numFrames} Keyframes)`;
-    renderTargetViewBlend();
-
-    // While training, skip queued render — the training loop renders at currentViewV each step
-    if (session && !isTraining) {
-        await gpuQueue.run(async () => {
-            if (!session) return;
-            const rgbG = await session.get_gaussian_render_view(currentViewV);
-            const rgbN = await session.get_nerf_render_view(currentViewV);
-            renderModelOutput(canvasGaussian, rgbG);
-            renderModelOutput(canvasNerf, rgbN);
-            updateBlendCanvas();
-        });
-    }
-
-    if (isAutoPlaying) {
-        setTimeout(() => requestAnimationFrame(autoPlayOrbitLoop), 25);
-    }
-}
-
-// Reset models and clear graphs
-async function resetSession() {
-    isTraining = false;
-    btnTrain.textContent = '▶ Start Multi-View Fitting';
-    btnTrain.classList.remove('btn-stop');
-
-    if (btnPretrain) {
-        btnPretrain.disabled = false;
-        btnPretrain.textContent = '1. Pre-train NeRF (50 Steps)';
-    }
-    if (btnSeed) {
-        btnSeed.disabled = true;
-        btnSeed.textContent = '2. Initialize 3D GS on Edges';
-    }
-
-    // Reset inline pipeline step items
-    if (step1Card) step1Card.className = 'inline-step-item';
-    if (step1Status) step1Status.textContent = 'Pre-train coordinate network';
-    if (step2Card) step2Card.className = 'inline-step-item';
-    if (step2Status) step2Status.textContent = 'Extract spatial derivatives ∇I(x,y)';
-    if (step3Card) step3Card.className = 'inline-step-item';
-    if (step3Status) step3Status.textContent = 'Sample Gaussian centers μ';
-    if (btnOneClickHybrid) {
-        btnOneClickHybrid.disabled = false;
-        btnOneClickHybrid.textContent = '🚀 Run Guided Pipeline';
-    }
-
-
-    const numGaussians = parseInt(numGaussiansInput.value) || 500;
-    const numFrames = targetFrames.length;
-
-    if (numFrames === 0) return;
-
-    // Concatenate all target frames into single Uint8Array
-    const frameLen = width * height * 3;
-    const flatConcat = new Uint8Array(numFrames * frameLen);
-    for (let f = 0; f < numFrames; f++) {
-        flatConcat.set(targetFrames[f], f * frameLen);
-    }
-
-    // Serialize new WASM session creation through gpuQueue to let previous WGPU buffers unmap cleanly
-    await gpuQueue.run(async () => {
-        session = create_multiframe_session(width, height, numGaussians, flatConcat, numFrames);
-        console.log(`[System] Initialized Multi-Frame session at ${width}x${height} grid with ${numGaussians} 3D Gaussians across ${numFrames} keyframe views.`);
-    });
-
-
-    lossHistoryGaussian = [];
-    lossHistoryNerf = [];
-    stepCounter = 0;
-    isTraining = false;
-    isLoopRunning = false;
-    btnTrain.textContent = '▶ Start Fitting';
-    btnTrain.classList.remove('btn-stop');
-
-    // Re-enable NeRF-Guided Seeding toggle for new session
-    if (chkNerfGuided) {
-        chkNerfGuided.disabled = false;
-        const label = chkNerfGuided.closest('label');
-        if (label) {
-            label.style.opacity = '';
-            label.style.cursor = '';
-            label.title = '✨ Enable for better quality! Pre-trains NeRF to automatically place 3D Gaussians along detected object boundaries.';
-        }
-    }
-
-    // Clear views
-    clearCanvas(canvasGaussian);
-    clearCanvas(canvasNerf);
-    if (canvasBlend) clearCanvas(canvasBlend);
-    drawLossChart();
-
-    if (labelLossGaussian) labelLossGaussian.textContent = 'Loss: --';
-    if (labelLossNerf) labelLossNerf.textContent = 'Loss: --';
-}
-
-
-function clearCanvas(canvas) {
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-}
-
-
-// Training toggle
-async function toggleTraining() {
-    if (!session) {
-        console.warn("[System] Session is still initializing, please wait...");
-        return;
-    }
-
-    if (isTraining) {
-        isTraining = false;
-        btnTrain.textContent = '▶ Continue Fitting';
-        btnTrain.classList.remove('btn-stop');
-        console.log(`[System] Multi-View Training paused at Step ${lossHistoryGaussian.length}.`);
-    } else {
-        // Run NeRF-Guided Seeding on first launch if toggle is checked
-        if (chkNerfGuided && chkNerfGuided.checked && lossHistoryGaussian.length === 0) {
-            btnTrain.disabled = true;
-            btnTrain.textContent = '⏳ NeRF Guided Seeding...';
-            const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
-            const seedIters = Math.max(50, parseInt(nerfSeedItersInput ? nerfSeedItersInput.value : 500) || 500);
-            console.log(`[Pipeline] 🎓 NeRF-Guided Seeding: Pre-training Implicit NeRF for ${seedIters} steps...`);
-
-            for (let i = 1; i <= seedIters; i++) {
-                session.step_nerf_fast(lrNerf);
-                const reportEvery = Math.max(25, Math.floor(seedIters / 8));
-                if (i % reportEvery === 0) {
-                    await gpuQueue.run(async () => {
-                        const losses = await session.get_losses();
-                        labelLossNerf.textContent = `Loss: ${losses[1].toFixed(5)}`;
-                        const rgbN = await session.get_nerf_render_view(currentViewV);
-                        renderModelOutput(canvasNerf, rgbN);
-                        drawLossChart();
-                    });
-                    console.log(`[Pipeline] 🎓 NeRF pre-training: Step ${i}/${seedIters}...`);
-                    btnTrain.textContent = `⏳ NeRF Seeding ${Math.round(i/seedIters*100)}%`;
-                }
-                await new Promise(resolve => setTimeout(resolve, 1));
-            }
-
-
-            console.log("[Pipeline] 🎓 NeRF-Guided Seeding: Seeding 3D Gaussians along NeRF spatial gradients...");
-            await gpuQueue.run(async () => {
-                await session.seed_from_nerf();
-                const rgbG = await session.get_gaussian_render_view(currentViewV);
-                renderModelOutput(canvasGaussian, rgbG);
-            });
-            btnTrain.disabled = false;
-        }
-
-        isTraining = true;
-        btnTrain.textContent = '⏸ Pause Fitting';
-        btnTrain.classList.add('btn-stop');
-        // Lock the seeding toggle — only applies before first training step
-        if (chkNerfGuided) {
-            chkNerfGuided.disabled = true;
-            const label = chkNerfGuided.closest('label');
-            if (label) {
-                label.style.opacity = '0.45';
-                label.style.cursor = 'not-allowed';
-                label.title = '⏳ NeRF-Guided Seeding already applied at initialization. Reset to use again.';
-            }
-        }
-        const lrGaussian = parseFloat(lrGaussianInput.value) || 0.005;
-        const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
-        console.log(`[System] Starting Multi-View optimization. LR: Explicit GS = ${lrGaussian}, Implicit NeRF = ${lrNerf}`);
-        // Only launch a new loop if none is alive
-        if (!isLoopRunning) {
-            requestAnimationFrame(trainingLoop);
-        }
-    }
-}
-
-
-let stepCounter = 0;
-let isLoopRunning = false; // Guard against re-entrant loop launches
-
-// Core animation and optimization loop
-async function trainingLoop() {
-    // Prevent double-launch: if another loop iteration is still alive, bail out
-    if (isLoopRunning) return;
-    if (!isTraining || !session) return;
-
-    isLoopRunning = true;
-
-    const lrGaussian = parseFloat(lrGaussianInput.value) || 0.005;
-    const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
-
-    try {
-        // ALL session access goes through gpuQueue to serialize wasm-bindgen RefCell borrows
-        await gpuQueue.run(async () => {
-            if (!session || !isTraining) return;
-
-            // Synchronous GPU dispatch (no CPU readback)
-            session.step_gaussian_fast(lrGaussian);
-            session.step_nerf_fast(lrNerf);
-            stepCounter++;
-
-            // Async CPU readback only every 5 steps
-            if (stepCounter % 5 === 0 || stepCounter === 1) {
-                const losses = await session.get_losses();
-                const lossG = losses[0];
-                const lossN = losses[1];
-                lossHistoryGaussian.push(lossG);
-                lossHistoryNerf.push(lossN);
-                labelLossGaussian.textContent = `Loss: ${lossG.toFixed(5)}`;
-                labelLossNerf.textContent = `Loss: ${lossN.toFixed(5)}`;
-
-                const rgbG = await session.get_gaussian_render_view(currentViewV);
-                const rgbN = await session.get_nerf_render_view(currentViewV);
-                renderModelOutput(canvasGaussian, rgbG);
-                renderModelOutput(canvasNerf, rgbN);
-                updateBlendCanvas();
-                drawLossChart();
-
-                if (stepCounter % 50 === 0) {
-                    console.log(`[Step ${stepCounter}] GS Loss: ${lossG.toFixed(5)} | NeRF Loss: ${lossN.toFixed(5)}`);
-                }
-            }
-        });
-    } catch (e) {
-        console.error("Error during training step:", e);
-        isTraining = false;
-        isLoopRunning = false;
-        btnTrain.textContent = '▶ Continue Fitting';
-        btnTrain.classList.remove('btn-stop');
-        return;
-    }
-
-    isLoopRunning = false;
-
-    // Yield to browser event loop then reschedule
-    if (isTraining) {
-        await new Promise(resolve => setTimeout(resolve, 2));
-        requestAnimationFrame(trainingLoop);
-    }
-}
-
-
-// Automated 1-Click NeRF-Guided Seeding Pipeline
-async function runOneClickHybridPipeline() {
-    if (!session) return;
-    isTraining = false;
-    btnTrain.textContent = '▶ Start Multi-View Fitting';
-    btnTrain.classList.remove('btn-stop');
-
-    if (btnOneClickHybrid) {
-        btnOneClickHybrid.disabled = true;
-        btnOneClickHybrid.textContent = '⏳ Running Pipeline...';
-    }
-
-    // Step 1: Pre-train NeRF
-    if (step1Card) step1Card.className = 'inline-step-item active';
-    if (step1Status) step1Status.textContent = 'Training NeRF (50 steps)...';
-
-    const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
-    console.log("[Hybrid Pipeline] Step 1: Pre-training Implicit NeRF for 50 steps...");
-
-    for (let i = 1; i <= 50; i++) {
-        session.step_nerf_fast(lrNerf);
-        if (i % 10 === 0) {
-            await gpuQueue.run(async () => {
-                const losses = await session.get_losses();
-                labelLossNerf.textContent = `Loss: ${losses[1].toFixed(5)}`;
-                const rgbN = await session.get_nerf_render_view(currentViewV);
-                renderModelOutput(canvasNerf, rgbN);
-                drawLossChart();
-            });
-        }
-        await new Promise(resolve => setTimeout(resolve, 2));
-    }
-
-    if (step1Card) step1Card.className = 'inline-step-item complete';
-    if (step1Status) step1Status.textContent = '1. Pre-trained ✓';
-
-    // Step 2 & 3: Extract Gradients & Seed 3D Gaussians
-    if (step2Card) step2Card.className = 'inline-step-item active';
-    if (step2Status) step2Status.textContent = 'Extracting Edges...';
-
-    console.log("[Hybrid Pipeline] Step 2 & 3: Extracting NeRF spatial gradients and seeding 3D Gaussians...");
-    await new Promise(resolve => setTimeout(resolve, 200));
-
-    if (step2Card) step2Card.className = 'inline-step-item complete';
-    if (step2Status) step2Status.textContent = '2. Edges Extracted ✓';
-
-    if (step3Card) step3Card.className = 'inline-step-item active';
-    if (step3Status) step3Status.textContent = 'Seeding Gaussians...';
-
-    await gpuQueue.run(async () => {
-        await session.seed_from_nerf();
-        const rgbG = await session.get_gaussian_render_view(currentViewV);
-        renderModelOutput(canvasGaussian, rgbG);
-    });
-
-    if (step3Card) step3Card.className = 'inline-step-item complete';
-    if (step3Status) step3Status.textContent = '3. Gaussians Seeded ✓';
-
-    if (btnOneClickHybrid) {
-        btnOneClickHybrid.disabled = false;
-        btnOneClickHybrid.textContent = '✓ Guided Pipeline Complete';
-    }
-    console.log("[Hybrid Pipeline] Pipeline Complete! 3D Gaussians initialized accurately along object boundaries.");
-}
-
-// Pre-train NeRF to capture coarse multi-view edges
-
-async function runNeRFPretraining() {
-    isTraining = false;
-    btnTrain.textContent = '▶ Start Multi-View Fitting';
-    btnTrain.classList.remove('btn-stop');
-    
-    if (btnPretrain) {
-        btnPretrain.disabled = true;
-        btnPretrain.textContent = 'Training Multi-View NeRF...';
-    }
-
-    const lrNerf = parseFloat(lrNerfInput.value) || 0.001;
-    console.log("[Pipeline] Starting Step 1: Pre-training Implicit NeRF for 50 steps...");
-
-    for (let i = 1; i <= 50; i++) {
-        session.step_nerf_fast(lrNerf);
-        if (i % 10 === 0) {
-            await gpuQueue.run(async () => {
-                const losses = await session.get_losses();
-                labelLossNerf.textContent = `Loss: ${losses[1].toFixed(5)}`;
-                const rgbN = await session.get_nerf_render_view(currentViewV);
-                renderModelOutput(canvasNerf, rgbN);
-                drawLossChart();
-            });
-        }
-        await new Promise(resolve => setTimeout(resolve, 2));
-    }
-
-    console.log("[Pipeline] Step 1 Complete! NeRF spatial gradients extracted across views.");
-    if (btnPretrain) btnPretrain.textContent = '✓ Step 1 NeRF Pre-trained';
-    if (btnSeed) btnSeed.disabled = false;
-    if (step1Card) step1Card.className = 'stepper-card complete';
-    if (step1Status) step1Status.textContent = 'Complete ✓';
-    if (step2Card) step2Card.className = 'stepper-card active';
-    if (step2Status) step2Status.textContent = 'Ready';
-}
-
-// Seed 3D Gaussians from NeRF Importance Map
-async function seedGaussiansFromEdges() {
-    if (!session) return;
-    if (btnSeed) {
-        btnSeed.disabled = true;
-        btnSeed.textContent = 'Seeding 3D Gaussians...';
-    }
-    console.log("[Pipeline] Starting Step 2: Sampling 3D Gaussian centers along multi-view spatial boundaries...");
-
-    if (step2Card) step2Card.className = 'stepper-card complete';
-    if (step2Status) step2Status.textContent = 'Complete ✓';
-    if (step3Card) step3Card.className = 'stepper-card active';
-    if (step3Status) step3Status.textContent = 'Seeding 3D Gaussians...';
-
-    await gpuQueue.run(async () => {
-        await session.seed_from_nerf();
-        const rgbG = await session.get_gaussian_render_view(currentViewV);
-        renderModelOutput(canvasGaussian, rgbG);
-    });
-
-    if (step3Card) step3Card.className = 'stepper-card complete';
-    if (step3Status) step3Status.textContent = 'Complete ✓';
-
-    console.log("[Pipeline] Step 2 & 3 Complete! 3D Gaussians initialized accurately along object boundaries.");
-    if (btnSeed) btnSeed.textContent = '✓ Step 2 & 3 GS Initialized';
-}
-
-
-
-// Helper: Render WASM RGB u8 array to canvas
-function renderModelOutput(canvas, rgbArray) {
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const imgData = ctx.createImageData(width, height);
-
-    let srcIdx = 0;
-    for (let i = 0; i < imgData.data.length; i += 4) {
-        imgData.data[i] = rgbArray[srcIdx];
-        imgData.data[i + 1] = rgbArray[srcIdx + 1];
-        imgData.data[i + 2] = rgbArray[srcIdx + 2];
-        imgData.data[i + 3] = 255;
-        srcIdx += 3;
-    }
-    ctx.putImageData(imgData, 0, 0);
-}
-
-// Helper: Update blended canvas output
-function updateBlendCanvas() {
-    if (!canvasBlend) return;
-    const alpha = blendSlider ? parseFloat(blendSlider.value) : 0.5;
-    const ctxG = canvasGaussian.getContext('2d');
-    const ctxN = canvasNerf.getContext('2d');
-    const ctxB = canvasBlend.getContext('2d');
-
-    const imgG = ctxG.getImageData(0, 0, width, height);
-    const imgN = ctxN.getImageData(0, 0, width, height);
-    const imgB = ctxB.createImageData(width, height);
-
-    for (let i = 0; i < imgB.data.length; i += 4) {
-        imgB.data[i] = (1 - alpha) * imgG.data[i] + alpha * imgN.data[i];
-        imgB.data[i + 1] = (1 - alpha) * imgG.data[i + 1] + alpha * imgN.data[i + 1];
-        imgB.data[i + 2] = (1 - alpha) * imgG.data[i + 2] + alpha * imgN.data[i + 2];
-        imgB.data[i + 3] = 255;
-    }
-    ctxB.putImageData(imgB, 0, 0);
-}
-
-// Helper: Draw real-time Loss History Chart
-function drawLossChart() {
-    if (!canvasChart) return;
-    const ctx = canvasChart.getContext('2d');
-    const w = canvasChart.width;
-    const h = canvasChart.height;
-
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, w, h);
-
-    if (lossHistoryGaussian.length === 0 && lossHistoryNerf.length === 0) {
-        ctx.fillStyle = '#6b21a8';
-        ctx.font = '11px sans-serif';
-        ctx.fillText('Loss history chart will plot here...', 20, h / 2);
-        return;
-    }
-
-    const drawLine = (history, color) => {
-        if (history.length < 2) return;
-        const maxLoss = Math.max(0.1, ...history.slice(0, 50));
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2.0;
-        ctx.beginPath();
-
-        for (let i = 0; i < history.length; i++) {
-            const x = (i / (history.length - 1)) * w;
-            const y = h - (history[i] / maxLoss) * (h - 20) - 10;
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-    };
-
-    drawLine(lossHistoryGaussian, '#ec4899'); // Hot Pink for GS
-    drawLine(lossHistoryNerf, '#9333ea');     // Cyber Purple for NeRF
-
-}
-
-
-start().catch(err => {
-    console.error("[Initialization Error] Failed to start WASM/WebGPU session:", err);
-    
-    // Check if running directly over file:// protocol
-    if (window.location.protocol === 'file:') {
-        console.error("[CORS Warning] Browsers block WebAssembly module loading over file:// protocol. Please serve the 'web' folder via HTTP (e.g. using a local server like python -m http.server 8000).");
-        alert("⚠️ Local File Access Notice:\n\nBrowsers restrict WebAssembly and ES modules when opening HTML directly over file:// scheme.\n\nPlease serve the 'web' directory over HTTP (e.g., using python -m http.server 8000 or basic-http-server web) and open http://localhost:8000.");
-    }
-});
+start();
