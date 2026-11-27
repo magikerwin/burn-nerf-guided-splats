@@ -143,23 +143,23 @@ cargo run --release --example 03_hybrid_benchmark
 
 #### 📊 Results
 
-Evaluated on the **11-part 3D Saturn + Tilted Ring + 2 Moons** scene inside `[0, 1]³` (`N = 26` 3D Gaussians, 4 training views + 4 unseen 360° novel test views):
+Evaluated across **three contrasting 3D topologies** inside `[0, 1]³` (`N = 28` 3D Gaussians, 4 training views + 4 unseen 360° novel test views):
 
-| Pipeline | Wall Time | Train PSNR | Unseen 360° Novel-View PSNR |
+| 3D Scene Topology | Blind 3DGS (Novel 360° PSNR) | 3D Volumetric-Guided 3DGS (Ours) | Fair 3D Gain |
 | :--- | :---: | :---: | :---: |
-| **Blind 3DGS (Uniform Adam LR)** | `6.39 s` | `21.24 dB` | `20.26 dB` |
-| **Blind 3DGS (Kerbl Decoupled LR)** | `6.56 s` | `21.53 dB` | `19.54 dB` |
-| **3D Volumetric-Guided 3DGS (Ours)** | **`6.11 s`** | **`23.55 dB`** | **`23.45 dB` (`+3.18 dB` faster!)** |
+| **Saturn Ring** *(core + tilted ring + moons)* | `20.37 dB` (`6.93 s`) | **`23.86 dB` (`6.73 s`)** | **`+3.48 dB` (faster)** |
+| **3D DNA Helix** *(intertwined double spiral)* | `17.23 dB` (`6.56 s`) | **`23.19 dB` (`5.82 s`)** | **`+5.96 dB` (faster)** |
+| **Hollow 3D Cage** *(empty center + outer frame)* | `18.20 dB` (`6.47 s`) | **`20.64 dB` (`5.72 s`)** | **`+2.44 dB` (faster)** |
 
 <details>
 <summary>📝 Example Terminal Output (03_hybrid_benchmark & 02_spectral_bias)</summary>
 
 ```text
 cargo run --release --example 03_hybrid_benchmark
-=== True 3D Saturn Benchmark (11-Part 3D Ringed Planet, 4 Train + 4 Novel 360° Views, N=26) ===
-  1. Blind 3DGS (Uniform LR)   [ 6392 ms]: Train PSNR = 21.24 dB | Novel 360° PSNR = 20.26 dB
-  2. Blind 3DGS (Kerbl LR)     [ 6556 ms]: Train PSNR = 21.53 dB | Novel 360° PSNR = 19.54 dB
-  3. 3D Volumetric-Guided 3DGS [ 6114 ms]: Train PSNR = 23.55 dB | Novel 360° PSNR = 23.45 dB (+3.18 dB vs best Blind!)
+=== Multi-Topology 3D Volumetric NeRF -> 3DGS Benchmark (4 Train + 4 Novel 360° Views, N=28) ===
+  [Saturn Ring   ] Blind 3DGS (6929 ms): 20.37 dB  |  3D-Guided (6725 ms): 23.86 dB  (+3.48 dB!)
+  [3D DNA Helix  ] Blind 3DGS (6563 ms): 17.23 dB  |  3D-Guided (5824 ms): 23.19 dB  (+5.96 dB!)
+  [Hollow 3D Cage] Blind 3DGS (6474 ms): 18.20 dB  |  3D-Guided (5719 ms): 20.64 dB  (+2.44 dB!)
 
 cargo run --release --example 02_spectral_bias
 === Example 02: Neural Spectral Bias (120 Adam Steps on High-Frequency Checkerboard) ===
@@ -184,7 +184,7 @@ cargo test --release
 
 ### Client-Side WebAssembly App (WASM)
 
-Both `VolumetricNerfModel` and `GaussianModel` compile directly to WebAssembly for 100% client-side in-browser training and real-time 360° rendering.
+Both `VolumetricNerfModel` and `GaussianModel` compile directly to lightweight WebAssembly (`~2.0 MB` `.wasm`, `~500 KB` gzipped) for 100% client-side in-browser training and real-time 360° rendering across mobile and desktop browsers.
 
 #### 1. Build & preview the WASM bundle locally
 
@@ -206,25 +206,25 @@ Both `VolumetricNerfModel` and `GaussianModel` compile directly to WebAssembly f
 
 #### 2. Automatic Deployments (GitHub Pages)
 
-The CI workflow ([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)) automatically compiles the Rust crate to WebAssembly via `wasm-pack` and deploys `./web` to **[https://magikerwin.github.io/burn-nerf-guided-splats/](https://magikerwin.github.io/burn-nerf-guided-splats/)** on every push to `main`.
+The CI workflow ([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)) automatically compiles the Rust crate to WebAssembly via `wasm-pack` and deploys `./web` to **[https://magikerwin.github.io/burn-nerf-guided-splats/](https://magikerwin.github.io/burn-nerf-guided-splats/)** on every code push to `main`.
 
 ---
 
 ## 🪐 3D Saturn Scene & Hybrid Tuning Details
 
-To make the difference between **Blind** and **NeRF-Guided** 3D Gaussian Splatting crystal clear even at interactive browser resolutions (`44 × 44`), the default benchmark reconstructs an **11-body 3D Saturn System** inside `[0, 1]³`:
+Both the CLI benchmark and the live WebAssembly playground include **three contrasting 3D topologies** inside `[0, 1]³` (`> 98%` empty air) to test distinct failure modes of unguided 3D Gaussian Splatting:
 
-| Component | 3D Geometry in `[0, 1]³` | Purpose in Benchmark |
+| Scene Preset | 3D Geometry in `[0, 1]³` | What It Stress-Tests |
 | :--- | :--- | :--- |
-| **Golden Planet Core** | Center `(0.50, 0.50, 0.50)`, `r = 0.095` | Tests front/back depth occlusion as the tilted ring passes in front & behind |
-| **8 Tilted 3D Ring Nodes** | Orbit radius `R = 0.27`, 3D tilt `Δy = ±0.12`, `r = 0.056` | Thin 3D arc occupying `< 1%` volume where random 3D splats miss in empty air |
-| **2 Outer 3D Moons** | `(0.22, 0.23, 0.70)` & `(0.78, 0.77, 0.30)`, `r = 0.062` | Tests spatial coverage of farthest-point 3D voxel seeding vs. peak clumping |
+| **`Saturn`** | Golden core `(0.5, 0.5, 0.5)` + 8 tilted ring nodes + 2 moons | Multi-scale coverage & front/back ring occlusion |
+| **`DNA Helix`** | Two intertwined 7-node 3D spirals (`R = 0.23`, phase `π`) | Continuous 360° depth-crossing where 2D silhouettes overlap (`+5.96 dB` win) |
+| **`Hollow Cage`** | 8 cube corners `{0.27, 0.73}³` + 6 outer face nodes | 100% hollow center where random Blind splats get trapped inside the shell |
 
 ### Key Tuning Insights
 
-1. **Why Uniform Adam LR Hurts Guided 3DGS**: Because Adam normalizes first-step updates to `±lr`, applying a large appearance LR (`0.05+`) to `means` violently kicks seeded Gaussians off the 3D ring on Step 1. Scaling `lr_means = 0.10 × lr_appearance` (mirroring Kerbl et al. 2023) preserves the 3D NeRF initialization while colors and opacities converge rapidly.
-2. **Why Empty-Sky Rays Must Be Balanced**: Because `98.6%` of `[0, 1]³` is empty air, unweighted pixel MSE lets empty background rays drown out thin 3D ring density during short warmups. Foreground ray weighting (`1 + 6 · target_rgb`) + `8×` unit-cube extinction carves crisp 3D density peaks in 35 steps.
-3. **Why Multi-View Camera Count `K` Matters**: Switching the live demo from `4 Views` to `2 Views` demonstrates **epipolar ambiguity**—two cameras cannot uniquely triangulate an 11-body 3D ring without ghost intersections, whereas `4` or `8` views lock onto true 3D `(x, y, z)` coordinates with `< 0.1 dB` drop on unseen 360° angles.
+1. **Why Uniform Adam LR Hurts Guided 3DGS**: Because Adam normalizes first-step updates to `±lr`, applying a large appearance LR (`0.05+`) to `means` violently kicks seeded Gaussians off 3D surfaces on Step 1. Scaling `lr_means = 0.10 × lr_appearance` (mirroring Kerbl et al. 2023) preserves the 3D NeRF initialization while colors and opacities converge rapidly.
+2. **Why Empty-Sky Rays Must Be Balanced**: Because `> 98%` of `[0, 1]³` is empty air, unweighted pixel MSE lets empty background rays drown out thin 3D features during short warmups. Foreground ray weighting (`1 + 6 · target_rgb`) + `8×` unit-cube extinction carves crisp 3D density peaks in 35–45 steps.
+3. **Why Multi-View Camera Count `K` Matters**: Switching the live demo from `4 Views` to `2 Views` demonstrates **epipolar ambiguity**—two cameras cannot uniquely triangulate concave 3D rings or helices without ghost intersections, whereas `4` or `8` views lock onto true 3D `(x, y, z)` coordinates across unseen 360° angles.
 
 ---
 
