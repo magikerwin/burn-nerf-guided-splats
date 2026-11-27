@@ -620,7 +620,14 @@ body {
     background: var(--accent);
 }
 
-/* 3 Archival Engineering Notes */
+/* 02 · Pipeline Architecture Section */
+.arch-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+}
+
 .insights-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
