@@ -5,7 +5,7 @@
 [![WebAssembly + WebGPU](https://img.shields.io/badge/WebAssembly-WebGPU%20%2B%20CPU-1e4dd8?logo=webassembly)](https://magikerwin.github.io/burn-nerf-guided-splats/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-0b7a75.svg)](./LICENSE)
 
-> An interactive, browser-based 3D differentiable rendering engine combining **Volumetric Ray-Marched Neural Radiance Fields (NeRF)** and **3D Gaussian Splatting (3DGS)** built with the [Burn](https://burn.dev/) deep learning framework in Rust. Watch a coarse 3D NeRF discover volumetric density $\sigma(x, y, z)$ to guide explicit 3D Gaussian Splatting right in your browser!
+> An interactive, browser-based 3D differentiable rendering engine combining **Volumetric Ray-Marched Neural Radiance Fields (NeRF)** and **3D Gaussian Splatting (3DGS)** built with the [Burn](https://burn.dev/) deep learning framework in Rust. Watch a coarse 3D NeRF discover volumetric density `σ(x, y, z)` to guide explicit 3D Gaussian Splatting right in your browser!
 >
 > 🚀 **[Try the Live WebAssembly Demo!](https://magikerwin.github.io/burn-nerf-guided-splats/)**
 
@@ -30,11 +30,11 @@
 
 ## ✨ Features
 
-- **True 3D Volumetric Ray-Marched NeRF (`VolumetricNerfModel`)** — Evaluates Fourier-encoded 3D world coordinates $(x, y, z) \in [0, 1]^3 \to (\text{RGB}, \sigma)$ along camera rays with Mildenhall volume rendering ($T_k = \exp(-\Delta t \sum_{j < k} \sigma_j)$) accelerated via a fused strict-upper-triangular `matmul`.
-- **Depth-Sorted 3D Gaussian Splatting (`GaussianModel`)** — Projects explicit 3D Gaussians (3D Means, Log-Scales, Rotation, RGB Logits, Opacity Logit) under arbitrary $360^\circ$ `(yaw, pitch)` turntable cameras with exact front-to-back $\alpha$-compositing (`argsort` + strict-lower-triangular transmittance `matmul`).
-- **Farthest-Point 3D Voxel Seeding** — Samples active 3D NeRF density voxels ($\alpha \ge \tau$) using density-weighted 3D farthest-point selection ($\min d^2 \cdot (0.4 + \alpha)$) so thin 3D rings, planet cores, and distant moons all receive balanced 3D Gaussian coverage.
+- **True 3D Volumetric Ray-Marched NeRF (`VolumetricNerfModel`)** — Evaluates Fourier-encoded 3D world coordinates `(x, y, z) ∈ [0, 1]³ → (RGB, σ)` along camera rays with Mildenhall volume rendering (`T_k = exp(-Δt · ∑_{j < k} σ_j)`) accelerated via a fused strict-upper-triangular `matmul`.
+- **Depth-Sorted 3D Gaussian Splatting (`GaussianModel`)** — Projects explicit 3D Gaussians (3D Means, Log-Scales, Rotation, RGB Logits, Opacity Logit) under arbitrary 360° `(yaw, pitch)` turntable cameras with exact front-to-back α-compositing (`argsort` + strict-lower-triangular transmittance `matmul`).
+- **Farthest-Point 3D Voxel Seeding** — Samples active 3D NeRF density voxels (`α ≥ τ`) using density-weighted 3D farthest-point selection (`min_dist² · (0.4 + α)`) so thin 3D rings, planet cores, and distant moons all receive balanced 3D Gaussian coverage.
 - **Kerbl-Style Decoupled Parameter-Group Learning Rates** — Uses Burn's `GradientsParams::from_params` to step 3D positions (`lr_means = 0.10 × base_lr`) and scales (`0.30 × base_lr`) more gently than color/opacity logits (`1.0 × base_lr`), preventing Adam from kicking newly seeded splats off 3D surfaces.
-- **Instant-NGP Foreground/Sky Ray Balancing** — Balances foreground object rays against empty-sky carving rays (`1 + 6 · target_rgb`) with an $8\times$ unit-cube optical extinction scale so sparse 3D structures solidify within ~35 warmup steps.
+- **Instant-NGP Foreground/Sky Ray Balancing** — Balances foreground object rays against empty-sky carving rays (`1 + 6 · target_rgb`) with an `8×` unit-cube optical extinction scale so sparse 3D structures solidify within ~35 warmup steps.
 - **Dual WebGPU + CPU WASM Execution** — Runs hardware-accelerated client-side training via `Autodiff<Wgpu>` when WebGPU is available, and automatically falls back to `Autodiff<Flex>` CPU WebAssembly on browsers without WebGPU.
 - **Space-Age Industrial Studio UI** — Tactile lunar-ceramic chassis (`#f4f0e6`) paired with obsidian CRT 3D viewports (`#14151a`), inline `?` parameter tooltips, live 3D Gaussian ellipse overlays, configurable camera views (`K = 2, 4, 8`) and splat budgets (`N = 26, 48`), and real-time Burn telemetry.
 - **Fully in Rust** — Differentiable ray marcher, depth-sorted 3D splat rasterizer, hybrid voxel bridge, CLI benchmarks, and WebAssembly bindings in a single crate.
@@ -45,7 +45,7 @@
 
 The hybrid pipeline couples an implicit volumetric coordinate MLP (Stage 1) with an explicit differentiable 3D Gaussian rasterizer (Stage 3) through a 3D density-lattice seeding bridge (Stage 2):
 
-```
+```text
 Stage 1 — Coarse 3D Volumetric NeRF Discovery (35–45 Warmup Steps)
   Camera Rays (u, v, yaw, pitch) × S=14 Depth Samples ──► World Points (x, y, z) [R × 14 × 3]
     → Fourier Positional Encoding (L=4 octaves, sin/cos)                        [R × 14 × 24]
@@ -68,17 +68,23 @@ Stage 3 — Explicit Depth-Sorted 3D Gaussian Splatting Refinement
 
 ### Mathematical Formulation
 
-1. **Volumetric Ray Marching (`VolumetricNerfModel`):**
-   $$\hat{C}(\mathbf{r}) = \sum_{k=1}^{S} T_k \left(1 - \exp(-\sigma_k \delta_k)\right) \mathbf{c}_k, \quad T_k = \exp\!\left(-\sum_{j < k} \sigma_j \delta_j\right)$$
+1. **Volumetric Ray Marching (`VolumetricNerfModel`)**
+   ```text
+   C(r) = ∑_{k=1..S} T_k · (1 - exp(-σ_k · Δt)) · c_k
+   T_k  = exp(-∑_{j < k} σ_j · Δt)
+   ```
 
-2. **Depth-Sorted 3D Gaussian $\alpha$-Compositing (`GaussianModel`):**
-   $$\hat{C}(\mathbf{p}) = \sum_{i=1}^{N} \mathbf{c}_{\pi(i)} \, \alpha_{\pi(i)}(\mathbf{p}) \prod_{j < i} \left(1 - \alpha_{\pi(j)}(\mathbf{p})\right), \quad \alpha_i(\mathbf{p}) = o_i \exp\!\left(-\tfrac{1}{2}(\mathbf{p} - \boldsymbol{\mu}'_i)^\top \boldsymbol{\Sigma}_i^{-1} (\mathbf{p} - \boldsymbol{\mu}'_i)\right)$$
+2. **Depth-Sorted 3D Gaussian α-Compositing (`GaussianModel`)**
+   ```text
+   C(p)   = ∑_{i=1..N} c_i · α_i(p) · ∏_{j < i} (1 - α_j(p))
+   α_i(p) = o_i · exp(-½ (p - μ'_i)ᵀ Σ_i⁻¹ (p - μ'_i))
+   ```
 
 ---
 
 ## 📁 Project Structure
 
-```
+```text
 burn-nerf-guided-splats/
 ├── src/
 │   ├── lib.rs              # Crate root exporting model, training, hybrid, utils, & wasm modules
@@ -137,9 +143,9 @@ cargo run --release --example 03_hybrid_benchmark
 
 #### 📊 Results
 
-Evaluated on the **11-part 3D Saturn + Tilted Ring + 2 Moons** scene inside $[0, 1]^3$ (`N = 26` 3D Gaussians, 4 training views + 4 unseen $360^\circ$ novel test views):
+Evaluated on the **11-part 3D Saturn + Tilted Ring + 2 Moons** scene inside `[0, 1]³` (`N = 26` 3D Gaussians, 4 training views + 4 unseen 360° novel test views):
 
-| Pipeline | Wall Time | Train PSNR | Unseen $360^\circ$ Novel-View PSNR |
+| Pipeline | Wall Time | Train PSNR | Unseen 360° Novel-View PSNR |
 | :--- | :---: | :---: | :---: |
 | **Blind 3DGS (Uniform Adam LR)** | `6.39 s` | `21.24 dB` | `20.26 dB` |
 | **Blind 3DGS (Kerbl Decoupled LR)** | `6.56 s` | `21.53 dB` | `19.54 dB` |
@@ -149,13 +155,13 @@ Evaluated on the **11-part 3D Saturn + Tilted Ring + 2 Moons** scene inside $[0,
 <summary>📝 Example Terminal Output (03_hybrid_benchmark & 02_spectral_bias)</summary>
 
 ```text
-$ cargo run --release --example 03_hybrid_benchmark
+cargo run --release --example 03_hybrid_benchmark
 === True 3D Saturn Benchmark (11-Part 3D Ringed Planet, 4 Train + 4 Novel 360° Views, N=26) ===
   1. Blind 3DGS (Uniform LR)   [ 6392 ms]: Train PSNR = 21.24 dB | Novel 360° PSNR = 20.26 dB
   2. Blind 3DGS (Kerbl LR)     [ 6556 ms]: Train PSNR = 21.53 dB | Novel 360° PSNR = 19.54 dB
   3. 3D Volumetric-Guided 3DGS [ 6114 ms]: Train PSNR = 23.55 dB | Novel 360° PSNR = 23.45 dB (+3.18 dB vs best Blind!)
 
-$ cargo run --release --example 02_spectral_bias
+cargo run --release --example 02_spectral_bias
 === Example 02: Neural Spectral Bias (120 Adam Steps on High-Frequency Checkerboard) ===
   L = 0 (Raw (x,y) only)        -> MSE: 0.02158 | PSNR: 16.66 dB (Blurry low-freq wash!)
   L = 8 (Fourier sin/cos 2^k π) -> MSE: 0.00069 | PSNR: 31.64 dB (Crisp checkerboard!)
@@ -178,7 +184,7 @@ cargo test --release
 
 ### Client-Side WebAssembly App (WASM)
 
-Both `VolumetricNerfModel` and `GaussianModel` compile directly to WebAssembly for 100% client-side in-browser training and real-time $360^\circ$ rendering.
+Both `VolumetricNerfModel` and `GaussianModel` compile directly to WebAssembly for 100% client-side in-browser training and real-time 360° rendering.
 
 #### 1. Build & preview the WASM bundle locally
 
@@ -206,19 +212,19 @@ The CI workflow ([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml))
 
 ## 🪐 3D Saturn Scene & Hybrid Tuning Details
 
-To make the difference between **Blind** and **NeRF-Guided** 3D Gaussian Splatting crystal clear even at interactive browser resolutions (`44 × 44`), the default benchmark reconstructs an **11-body 3D Saturn System** inside $[0, 1]^3$:
+To make the difference between **Blind** and **NeRF-Guided** 3D Gaussian Splatting crystal clear even at interactive browser resolutions (`44 × 44`), the default benchmark reconstructs an **11-body 3D Saturn System** inside `[0, 1]³`:
 
-| Component | 3D Geometry in $[0, 1]^3$ | Purpose in Benchmark |
+| Component | 3D Geometry in `[0, 1]³` | Purpose in Benchmark |
 | :--- | :--- | :--- |
-| **Golden Planet Core** | Center `(0.50, 0.50, 0.50)`, $r = 0.095$ | Tests front/back depth occlusion as the tilted ring passes in front & behind |
-| **8 Tilted 3D Ring Nodes** | Orbit radius $R = 0.27$, 3D tilt $\Delta y = \pm 0.12$, $r = 0.056$ | Thin 3D arc occupying `< 1%` volume where random 3D splats miss in empty air |
-| **2 Outer 3D Moons** | `(0.22, 0.23, 0.70)` & `(0.78, 0.77, 0.30)`, $r = 0.062$ | Tests spatial coverage of farthest-point 3D voxel seeding vs. peak clumping |
+| **Golden Planet Core** | Center `(0.50, 0.50, 0.50)`, `r = 0.095` | Tests front/back depth occlusion as the tilted ring passes in front & behind |
+| **8 Tilted 3D Ring Nodes** | Orbit radius `R = 0.27`, 3D tilt `Δy = ±0.12`, `r = 0.056` | Thin 3D arc occupying `< 1%` volume where random 3D splats miss in empty air |
+| **2 Outer 3D Moons** | `(0.22, 0.23, 0.70)` & `(0.78, 0.77, 0.30)`, `r = 0.062` | Tests spatial coverage of farthest-point 3D voxel seeding vs. peak clumping |
 
 ### Key Tuning Insights
 
-1. **Why Uniform Adam LR Hurts Guided 3DGS**: Because Adam normalizes first-step updates to $\pm \text{lr}$, applying a large appearance LR (`0.05+`) to `means` violently kicks seeded Gaussians off the 3D ring on Step 1. Scaling `lr_means = 0.10 × lr_appearance` (mirroring Kerbl et al. 2023) preserves the 3D NeRF initialization while colors and opacities converge rapidly.
-2. **Why Empty-Sky Rays Must Be Balanced**: Because `98.6%` of $[0, 1]^3$ is empty air, unweighted pixel MSE lets empty background rays drown out thin 3D ring density during short warmups. Foreground ray weighting (`1 + 6 · target_rgb`) + $8\times$ unit-cube extinction carves crisp 3D density peaks in 35 steps.
-3. **Why Multi-View Camera Count `K` Matters**: Switching the live demo from `4 Views` to `2 Views` demonstrates **epipolar ambiguity**—two cameras cannot uniquely triangulate an 11-body 3D ring without ghost intersections, whereas `4` or `8` views lock onto true 3D $(x, y, z)$ coordinates with `< 0.1 dB` drop on unseen $360^\circ$ angles.
+1. **Why Uniform Adam LR Hurts Guided 3DGS**: Because Adam normalizes first-step updates to `±lr`, applying a large appearance LR (`0.05+`) to `means` violently kicks seeded Gaussians off the 3D ring on Step 1. Scaling `lr_means = 0.10 × lr_appearance` (mirroring Kerbl et al. 2023) preserves the 3D NeRF initialization while colors and opacities converge rapidly.
+2. **Why Empty-Sky Rays Must Be Balanced**: Because `98.6%` of `[0, 1]³` is empty air, unweighted pixel MSE lets empty background rays drown out thin 3D ring density during short warmups. Foreground ray weighting (`1 + 6 · target_rgb`) + `8×` unit-cube extinction carves crisp 3D density peaks in 35 steps.
+3. **Why Multi-View Camera Count `K` Matters**: Switching the live demo from `4 Views` to `2 Views` demonstrates **epipolar ambiguity**—two cameras cannot uniquely triangulate an 11-body 3D ring without ghost intersections, whereas `4` or `8` views lock onto true 3D `(x, y, z)` coordinates with `< 0.1 dB` drop on unseen 360° angles.
 
 ---
 
