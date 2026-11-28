@@ -36,7 +36,7 @@
 - **Kerbl-Style Decoupled Parameter-Group Learning Rates** — Uses Burn's `GradientsParams::from_params` to step 3D positions (`lr_means = 0.10 × base_lr`) and scales (`0.30 × base_lr`) more gently than color/opacity logits (`1.0 × base_lr`), preventing Adam from kicking newly seeded splats off 3D surfaces.
 - **Instant-NGP Foreground/Sky Ray Balancing** — Balances foreground object rays against empty-sky carving rays (`1 + 6 · target_rgb`) with an `8×` unit-cube optical extinction scale so sparse 3D structures solidify within ~35 warmup steps.
 - **Universal Mobile-First WebAssembly + Native WGPU** — Runs lightweight `Autodiff<Flex>` WebAssembly directly in any mobile or desktop browser (zero WebGPU driver quirks or shader stalls), plus hardware-accelerated `Autodiff<Wgpu>` via `--gpu` in the native CLI.
-- **Space-Age Industrial Studio UI** — Tactile lunar-ceramic chassis (`#f4f0e6`) paired with obsidian CRT 3D viewports (`#14151a`), inline `?` parameter tooltips, live 3D Gaussian ellipse overlays, configurable camera views (`K = 2, 4, 8`) and splat budgets (`N = 26, 48`), and real-time Burn telemetry.
+- **Space-Age Industrial Studio UI** — Tactile lunar-ceramic chassis (`#f4f0e6`) paired with obsidian CRT 3D viewports (`#14151a`), 3 scene presets (`Saturn`, `DNA Helix`, `Hollow Cage`), configurable camera views (`K = 2, 4, 8`) and splat budgets (`N = 14, 24, 36`), live 3D ellipse overlays, and real-time Burn telemetry.
 - **Fully in Rust** — Differentiable ray marcher, depth-sorted 3D splat rasterizer, hybrid voxel bridge, CLI benchmarks, and WebAssembly bindings in a single crate.
 
 ---

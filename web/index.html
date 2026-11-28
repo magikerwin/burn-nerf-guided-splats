@@ -7,7 +7,7 @@
     <title>3D NeRF-Guided Gaussian Splatting — Kerwin Studio · Burn (Rust)</title>
     <meta name="description" content="Interactive 3D Volumetric Ray-Marched NeRF guiding 3D Gaussian Splatting in pure Rust, Burn, and WebAssembly." />
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2314151a'/%3E%3Ctext x='16' y='22' text-anchor='middle' fill='%23fdfbf6' font-family='system-ui,sans-serif' font-weight='800' font-size='18'%3EK%3C/text%3E%3C/svg%3E" />
-    <link rel="stylesheet" href="style.css?v=4" />
+    <link rel="stylesheet" href="style.css?v=5" />
 </head>
 
 <body>
@@ -74,11 +74,12 @@
 
                 <div class="selector-container">
                     <span class="selector-label">Budget
-                        <button type="button" class="info-trigger" data-tooltip="Total 3D Gaussians N inside [0, 1]³. At sparse budgets (N=28), random 3D splats miss thin geometry while NeRF-seeded splats lock onto every body.">?</button>
+                        <button type="button" class="info-trigger" data-tooltip="Total 3D Gaussians N (~1× Starved = 14, ~2× Balanced = 24, ~3× Rich = 36). At N=14, Blind leaves missing gaps while NeRF-seeded splats place ~1 Gaussian per 3D node.">?</button>
                     </span>
                     <div class="tabs" id="budget-tabs">
-                        <button type="button" class="tab-btn active" data-n="28">28 Splats</button>
-                        <button type="button" class="tab-btn" data-n="48">48 Splats</button>
+                        <button type="button" class="tab-btn" data-n="14">14 Splats</button>
+                        <button type="button" class="tab-btn active" data-n="24">24 Splats</button>
+                        <button type="button" class="tab-btn" data-n="36">36 Splats</button>
                     </div>
                 </div>
             </div>
@@ -217,7 +218,7 @@
         </footer>
     </div>
 
-    <script type="module" src="index.js?v=4"></script>
+    <script type="module" src="index.js?v=5"></script>
 </body>
 
 </html>
