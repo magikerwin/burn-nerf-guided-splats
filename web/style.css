@@ -286,6 +286,7 @@ body {
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
+    white-space: nowrap;
     border-radius: 999px;
     cursor: pointer;
     transition: all 0.16s ease;
@@ -846,6 +847,17 @@ footer a:hover {
     .stage-title .info-trigger,
     .selector-label .info-trigger {
         display: none;
+    }
+
+    .selector-container {
+        gap: 6px;
+        padding: 3px 5px 3px 10px;
+    }
+
+    .tab-btn {
+        font-size: 9.5px;
+        padding: 5px 8px;
+        letter-spacing: 0.04em;
     }
 
     .metric-pill {
